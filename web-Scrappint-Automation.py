@@ -8,7 +8,7 @@ import time
 
 # 1. Leer el archivo Excel
 # Asegúrate de que el nombre del archivo y las columnas coincidan exactamente con tu Excel
-ruta_excel = "datos_consultas.xlsx"
+ruta_excel = "Revisión técnico administrativa Ecosistema de la Salsa.xlsx"
 df = pd.read_excel(ruta_excel) 
 
 # 2. Iniciar el navegador
