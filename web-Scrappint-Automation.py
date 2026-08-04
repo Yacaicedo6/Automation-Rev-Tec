@@ -1,70 +1,78 @@
+import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select # Necesario para interactuar con listas desplegables
 import time
 
-# 1. Iniciar el navegador
+# 1. Leer el archivo Excel
+# Asegúrate de que el nombre del archivo y las columnas coincidan exactamente con tu Excel
+ruta_excel = "datos_consultas.xlsx"
+df = pd.read_excel(ruta_excel) 
+
+# 2. Iniciar el navegador
 driver = webdriver.Chrome()
+wait = WebDriverWait(driver, 15)
 
 try:
-    # 2. Navegar a la página web
-    print("Abriendo la página web...")
-    driver.get("https://inhabilidades.policia.gov.co:8080/consulta")
+    # 3. Iniciar el ciclo: Iterar sobre cada fila del DataFrame de Pandas
+    for index, row in df.iterrows():
+        tipo_doc = row['Tipo de documento']
+        num_doc = row['Numero de documento']
+        fecha_exp = row['Fecha de expedicion']
+        
+        print(f"\n--- Procesando registro {index + 1}: Documento {num_doc} ---")
+        
+        # Navegar a la página (lo hacemos en cada ciclo para tener un formulario limpio)
+        driver.get("https://inhabilidades.policia.gov.co:8080/consulta")
+        
+        # CAMPO: Tipo de documento (Lista desplegable)
+        # ⚠️ IMPORTANTE: Debes inspeccionar el ID real de este campo en la página
+        elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "REEMPLAZAR_CON_ID_TIPO_DOC")))
+        selector_tipo_doc = Select(elemento_tipo_doc)
+        # Selecciona la opción basándose en el texto visible que viene del Excel
+        selector_tipo_doc.select_by_visible_text(str(tipo_doc)) 
+        
+        # CAMPO: Número de documento
+        campo_documento = driver.find_element(By.ID, "nuip")
+        campo_documento.send_keys(str(num_doc))
 
-    # Inicializamos una espera explícita de hasta 15 segundos para que cargue la web
-    wait = WebDriverWait(driver, 15)
+        # CAMPO: Fecha de Expedición
+        campo_fecha = driver.find_element(By.ID, "fechaExpNuip")
+        # Aseguramos que la fecha se envíe como texto. Si Pandas la lee con otro formato (ej. Timestamp), 
+        # podrías necesitar formatearla así: row['Fecha de expedicion'].strftime('%d/%m/%Y')
+        campo_fecha.send_keys(str(fecha_exp))
 
-    print("Esperando a que cargue el formulario...")
-    
-    # 3. Llenar el formulario
-    
-    # CAMPO: Número de documento (Usamos wait.until para asegurar que la página ya cargó)
-    campo_documento = wait.until(EC.presence_of_element_located((By.ID, "nuip")))
-    campo_documento.send_keys("123456789") # <-- Reemplaza con la cédula real
+        # CAMPO: Empresa o Entidad Consultante (Dato Fijo)
+        campo_empresa = driver.find_element(By.ID, "nombreEmpresa")
+        campo_empresa.send_keys("Alcaldia de Cali")
 
-    # CAMPO: Fecha de Expedición
-    campo_fecha = driver.find_element(By.ID, "fechaExpNuip")
-    campo_fecha.send_keys("01/01/2000") # <-- Reemplaza con la fecha real (DD/MM/AAAA)
+        # CAMPO: NIT de la Empresa (Dato Fijo)
+        campo_nit = driver.find_element(By.ID, "nitEmpresa") # Verifica si este ID es correcto
+        campo_nit.send_keys("8903990113")
 
-    # CAMPO: Empresa o Entidad Consultante
-    campo_empresa = driver.find_element(By.ID, "nombreEmpresa")
-    campo_empresa.send_keys("Nombre de tu Entidad") # <-- Reemplaza con el nombre real
+        # CHECKBOX: Acepto los términos de uso
+        checkbox_terminos = driver.find_element(By.ID, "cbCondiciones")
+        driver.execute_script("arguments[0].click();", checkbox_terminos)
 
-    # CAMPO: NIT de la Empresa
-    # ⚠️ NOTA: Verifica que el ID del NIT sea realmente "nitEmpresa". Si no, cámbialo aquí.
-    campo_nit = driver.find_element(By.ID, "nitEmpresa")
-    campo_nit.send_keys("900000000") # <-- Reemplaza con el NIT real
-
-    # CHECKBOX: Acepto los términos de uso y la política
-    checkbox_terminos = driver.find_element(By.ID, "cbCondiciones")
-    # Usamos JavaScript para hacer clic, ya que es un "custom-control-input" que suele fallar con .click() normal
-    driver.execute_script("arguments[0].click();", checkbox_terminos)
-
-    print("Datos llenados correctamente.")
-    print("--------------------------------------------------")
-    print("⏳ PAUSA ACTIVA: Por favor, resuelve el reCAPTCHA")
-    print("y haz clic en 'Consultar' directamente en el navegador.")
-    print("El script esperará hasta 5 minutos a que lo hagas...")
-    print("--------------------------------------------------")
-
-    # 4. LA PAUSA ACTIVA (Human-in-the-Loop)
-    # Aquí el script espera a que la URL cambie (es decir, que se haya enviado el formulario exitosamente)
-    # o a que aparezca un elemento de la página de resultados. 
-    # Usaremos una espera basada en que el botón de consultar desaparezca tras hacer la consulta.
-    
-    WebDriverWait(driver, 300).until(
-        EC.invisibility_of_element_located((By.ID, "btnConsultar"))
-    )
-
-    print("✅ ¡Consulta enviada y procesada! Reanudando el script...")
-
-    # 5. Pausa final para que alcances a leer la terminal y ver la siguiente página
-    # Aquí iría el código para extraer la información de la nueva pantalla o descargar el PDF
-    time.sleep(10) 
+        print("Datos llenados correctamente.")
+        print("⏳ PAUSA ACTIVA: Resuelve el reCAPTCHA y haz clic en 'Consultar'...")
+        
+        # 4. PAUSA ACTIVA
+        # Espera hasta 5 minutos a que el botón de consultar desaparezca (indicando que avanzó)
+        WebDriverWait(driver, 300).until(
+            EC.invisibility_of_element_located((By.ID, "btnConsultar"))
+        )
+        print(f"✅ ¡Consulta exitosa para el documento {num_doc}!")
+        
+        # Aquí iría el código para extraer la información de la pantalla de resultados
+        # o descargar el PDF antes de que el ciclo vuelva a empezar.
+        
+        time.sleep(3) # Pausa breve para estabilizar antes de la siguiente consulta
 
 except Exception as e:
-    print(f"Ocurrió un error o se agotó el tiempo de espera: {e}")
+    print(f"\n❌ Ocurrió un error en el ciclo: {e}")
 
 finally:
     print("Cerrando navegador...")
