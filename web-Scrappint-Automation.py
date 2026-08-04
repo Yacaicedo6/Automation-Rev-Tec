@@ -3,50 +3,69 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# 1. Iniciar el navegador (Abre una ventana de Chrome)
-# Nota: En versiones recientes, Selenium gestiona el driver automáticamente.
+# 1. Iniciar el navegador
 driver = webdriver.Chrome()
 
 try:
-    # 2. Navegar a la página web (Usamos una URL de ejemplo)
+    # 2. Navegar a la página web
     print("Abriendo la página web...")
     driver.get("https://inhabilidades.policia.gov.co:8080/consulta")
 
-    # 3. Encontrar los campos del formulario y llenarlos
-    # Se usan selectores (ID, Name, o XPath) para ubicar la caja de texto en el código HTML
-    campo_documento = driver.find_element(By.ID, "numero_cedula")
+    # 3. Esperar a que el formulario cargue realmente
+    print("Esperando a que cargue el formulario...")
+    
+    # IMPORTANTE: Debes cambiar "ID_DEL_CAMPO_DOCUMENTO" por el ID real.
+    # (Para averiguarlo: clic derecho en el campo de la web -> Inspeccionar)
+    campo_documento = WebDriverWait(driver, 15).until(
+        EC.presence_of_element_located((By.ID, "ID_DEL_CAMPO_DOCUMENTO"))
+    )
+    
+    # 4. Llenar los campos del formulario
+    # Descomenta y ajusta los siguientes bloques una vez obtengas los IDs reales
+    
+    print("Llenando formulario...")
     campo_documento.send_keys("123456789")
     
-    print("Datos llenados correctamente.")
+    # -- Fecha de Expedición --
+    # campo_fecha = driver.find_element(By.ID, "ID_DEL_CAMPO_FECHA")
+    # campo_fecha.send_keys("01/01/2010") 
+    
+    # -- Empresa o Entidad Consultante --
+    # campo_empresa = driver.find_element(By.ID, "ID_DEL_CAMPO_EMPRESA")
+    # campo_empresa.send_keys("Nombre de tu Entidad")
+    
+    # -- NIT de la Empresa --
+    # campo_nit = driver.find_element(By.ID, "ID_DEL_CAMPO_NIT")
+    # campo_nit.send_keys("900000000-1")
+
+    # -- Checkbox de Términos de Uso --
+    # checkbox_terminos = driver.find_element(By.ID, "ID_DEL_CHECKBOX_TERMINOS")
+    # checkbox_terminos.click()
+    
+    print("Datos automatizados llenados correctamente.")
     print("--------------------------------------------------")
-    print("⏳ PAUSA ACTIVA: Por favor, resuelve el reCAPTCHA")
-    print("y haz clic en 'Consultar' directamente en el navegador.")
+    print("⏳ PAUSA ACTIVA (HUMANO REQUERIDO):")
+    print("1. Resuelve el reCAPTCHA ('No soy un robot').")
+    print("2. Haz clic en el botón de Consultar en el navegador.")
     print("El script esperará hasta 5 minutos a que lo hagas...")
     print("--------------------------------------------------")
 
-    # 4. LA PAUSA ACTIVA (Human-in-the-Loop)
-    # Le decimos al script que espere un máximo de 300 segundos (5 minutos)
-    # ¿Qué está esperando? A que aparezca un elemento que SOLO existe en la siguiente página
-    # (por ejemplo, el botón para descargar el certificado o una tabla de resultados).
-    
+    # 5. Esperar la página de resultados
+    # Aquí debes poner el ID de algún elemento que SOLO aparezca cuando la consulta fue exitosa
+    # (Ejemplo: el ID de la tabla de resultados o del botón de descarga)
     elemento_resultado = WebDriverWait(driver, 300).until(
-        EC.presence_of_element_located((By.ID, "boton_descargar_pdf"))
+        EC.presence_of_element_located((By.ID, "ID_DEL_ELEMENTO_RESULTADO"))
     )
 
-    # Si llegamos a esta línea, significa que resolviste el puzzle y la página avanzó
     print("✅ ¡Página de resultados detectada! Reanudando el script...")
 
-    # 5. Extraer la información o descargar
+    # 6. Extraer la información
     texto_resultado = elemento_resultado.text
-    print(f"Información encontrada: {texto_resultado}")
-
-    # Aquí podrías poner el código para volver a iniciar el ciclo con el siguiente documento
+    print(f"Información encontrada:\n{texto_resultado}")
 
 except Exception as e:
-    # Si pasan los 5 minutos y no se resolvió, o si la página cambió, arrojará un error
     print(f"Ocurrió un error o se agotó el tiempo de espera: {e}")
 
 finally:
-    # Cierra el navegador al finalizar, sin importar si falló o tuvo éxito
     print("Cerrando navegador...")
     driver.quit()
