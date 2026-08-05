@@ -87,11 +87,13 @@ try:
         except Exception as e:
             pass
 
+
         print("Datos llenados. Consultando...")
         btn_buscar = driver.find_element(By.ID, "ctl00_ContentPlaceHolder3_btnConsultar2")
         driver.execute_script("arguments[0].click();", btn_buscar)
 
         try:
+            # Esperamos el resultado exitoso
             wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'informa:')]")))
             time.sleep(2) 
             
@@ -109,7 +111,11 @@ try:
             print(f"✅ ¡Éxito! PDF guardado")
             
         except Exception as e:
-            print(f"⚠️ No se pudo generar el PDF para {num_doc}.")
+            print(f"⚠️ Fallo en el resultado de {num_doc}. Guardando captura de pantalla del error...")
+            # Tomar captura de pantalla de lo que sea que esté mostrando la página (errores, multas, etc.)
+            nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
+            ruta_error = os.path.join(carpeta_destino, nombre_error)
+            driver.save_screenshot(ruta_error)
         
         time.sleep(1)
 
