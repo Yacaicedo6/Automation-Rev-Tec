@@ -3,7 +3,7 @@
 venv/
 env/
 
-# Archivos de configuración secreta (¡MUY IMPORTANTE!)
+# Archivos de variables de entorno
 .env
 
 # Archivos compilados de Python
@@ -13,5 +13,8 @@ __pycache__/
 # Carpetas de resultados y descargas (Para no subir PDFs ni bases de datos de personas)
 Certificados_Contraloria/
 Certificados_RNMC/
+Certificados_Procuraduria/
+Certificados_Policia/
+Certificados_Delitos_Sexuales/
 *.xlsx
 *.csv
