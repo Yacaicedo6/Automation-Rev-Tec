@@ -1,0 +1,17 @@
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Archivos de configuración secreta (¡MUY IMPORTANTE!)
+.env
+
+# Archivos compilados de Python
+__pycache__/
+*.pyc
+
+# Carpetas de resultados y descargas (Para no subir PDFs ni bases de datos de personas)
+Certificados_Contraloria/
+Certificados_RNMC/
+*.xlsx
+*.csv
