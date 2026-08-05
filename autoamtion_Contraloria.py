@@ -18,7 +18,11 @@ API_KEY_2CAPTCHA = os.getenv("API_KEY_2CAPTCHA")
 SITE_KEY_CONTRALORIA = "6LcfnjwUAAAAAIyl8ehhox7ZYqLQSVl_w1dmYIle"
 
 if not API_KEY_2CAPTCHA:
-    raise ValueError("❌ No se encontró la API_KEY_2CAPTCHA. Verifica que exista tu archivo .env")
+    raise ValueError(
+        "❌ ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
+        "Asegúrate de que el archivo .env existe en la misma carpeta del script "
+        "y contiene la línea: API_KEY_2CAPTCHA=tu_clave_aqui"
+    )
 
 # Inicializar el servicio de 2Captcha
 solver = TwoCaptcha(API_KEY_2CAPTCHA)
@@ -84,10 +88,7 @@ try:
         time.sleep(3) 
         try:
             iframe_formulario = wait.until(EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'cfiscal')]")))
-            
-            # ¡NUEVO!: Extraemos la URL secreta del iframe para dársela a 2Captcha
             url_real_iframe = iframe_formulario.get_attribute("src")
-            
             driver.switch_to.frame(iframe_formulario)
         except Exception as e:
             print("⚠️ No se detectó el iframe, usando URL principal...")
@@ -113,23 +114,35 @@ try:
         campo_documento.send_keys(num_doc)
 
         # ==========================================
-        # 3. RESOLUCIÓN AUTOMÁTICA DEL RECAPTCHA
+        # 3. RESOLUCIÓN DE RECAPTCHA CON REINTENTOS
         # ==========================================
-        print("⏳ Enviando reCAPTCHA a 2Captcha con la URL correcta...")
-        try:
-            # ¡NUEVO!: Usamos 'url_real_iframe' en lugar de 'driver.current_url'
-            resultado = solver.recaptcha(sitekey=SITE_KEY_CONTRALORIA, url=url_real_iframe)
-            codigo_token = resultado['code']
-            print("✅ reCAPTCHA resuelto con éxito.")
-            
-            # Inyectar la respuesta del token
-            driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
-            time.sleep(1) 
-            
-        except Exception as e:
-            print(f"⚠️ Error al resolver el Captcha mediante API: {e}")
+        intentos = 0
+        max_intentos = 3
+        captcha_resuelto = False
+        
+        while intentos < max_intentos and not captcha_resuelto:
+            try:
+                print(f"⏳ Enviando reCAPTCHA a 2Captcha (Intento {intentos + 1}/{max_intentos})...")
+                resultado = solver.recaptcha(sitekey=SITE_KEY_CONTRALORIA, url=url_real_iframe)
+                codigo_token = resultado['code']
+                print("✅ reCAPTCHA resuelto con éxito.")
+                
+                # Inyectar la respuesta del token
+                driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
+                time.sleep(1) 
+                captcha_resuelto = True
+                
+            except Exception as e:
+                intentos += 1
+                print(f"⚠️ Error de red/conexión: {e}")
+                if intentos < max_intentos:
+                    print("🔄 Reintentando en 5 segundos...")
+                    time.sleep(5)
+
+        if not captcha_resuelto:
+            print(f"❌ Imposible resolver Captcha tras {max_intentos} intentos. Saltando a la siguiente persona...")
             driver.switch_to.default_content() 
-            continue 
+            continue
 
         # ==========================================
         # 4. EJECUTAR BÚSQUEDA Y ESPERAR DESCARGA
