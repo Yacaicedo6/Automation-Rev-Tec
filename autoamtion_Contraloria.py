@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 # ==========================================
 load_dotenv()
 
-API_KEY_2CAPTCHA = "b0f232ef496eb880ae53df3b26404b98"
+API_KEY_2CAPTCHA = os.getenv("API_KEY_2CAPTCHA")
 SITE_KEY_CONTRALORIA = "6LcfnjwUAAAAAIyl8ehhox7ZYqLQSVl_w1dmYIle"
 
 if not API_KEY_2CAPTCHA:
