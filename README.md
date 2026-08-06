@@ -77,6 +77,9 @@ Algunos portales piden validaciones adicionales que los scripts no pueden resolv
 - Antes de descargar, cada script revisa si ya existe el certificado esperado (por nombre de archivo, en la carpeta normal o en `_INHABILITADOS`) y lo omite si ya está.
 - Los 5 scripts auditan, al iniciar, los PDF ya descargados: si el texto no contiene la frase de "resultado limpio" de esa entidad, el archivo se mueve a `_INHABILITADOS` aunque ya estuviera descargado. Esto sirve como red de seguridad si algún certificado se guardó antes de que existiera esta verificación.
 - Si un error inesperado (red, portal caído, elemento no encontrado) interrumpe la consulta de una persona puntual, el script lo registra y sigue con la siguiente en vez de detener todo el lote. Al final indica cuántas personas quedaron sin procesar y termina con un código de error para que `ejecutar_revision.py` (o tú, si corres el script suelto) se entere y puedas volver a correrlo — lo ya descargado se omite automáticamente gracias a la idempotencia.
+- Si el mismo portal falla dos veces **seguidas** por algo técnico (no por un dato puntual de una persona, sino timeout, captcha no resuelto, o similar), el script asume que puede haber un bloqueo de IP o una caída temporal, corta esa verificación de inmediato y cierra el navegador, en vez de seguir gastando tiempo y créditos de 2Captcha contra un portal que no está respondiendo.
+- Contraloría, Judicial y Delitos Sexuales (los tres que resuelven reCAPTCHA) ocultan las señales típicas de que Chrome está siendo controlado por Selenium, ya que algunos portales responden con error cuando las detectan aunque el captcha se haya resuelto correctamente.
+- Contraloría además verifica en cada consulta el sitekey del reCAPTCHA contra el que tiene guardado, por si el portal lo cambia, y usa el vigente automáticamente.
 
 ## Privacidad y seguridad
 

@@ -47,6 +47,19 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
     return alertas_encontradas
 
+def circuito_abierto(fallos_consecutivos, nombre_entidad="RNMC"):
+    """
+    Si el portal falla dos veces seguidas por algo técnico (no por un dato puntual
+    de la persona), lo más probable es un bloqueo de IP o una caída temporal.
+    Seguir intentando con el resto solo perdería tiempo, así que se corta aquí.
+    """
+    if fallos_consecutivos >= 2:
+        print(f"\nSe detectaron {fallos_consecutivos} fallos técnicos consecutivos en el portal de {nombre_entidad}.")
+        print("Es posible que esté bloqueando las solicitudes automatizadas o esté caído en este momento.")
+        print("Se detiene esta verificación para no perder más tiempo.")
+        return True
+    return False
+
 # ==========================================
 # 1. CONFIGURACIÓN Y LECTURA DEL EXCEL
 # ==========================================
@@ -86,6 +99,7 @@ driver = webdriver.Chrome()
 wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0
+fallos_consecutivos = 0
 
 try:
     for index, row in df.iterrows():
@@ -183,6 +197,7 @@ try:
                     ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                     driver.save_screenshot(ruta_error)
                     lista_alertas_finales.append(nombre_error.replace(".png", ""))
+                    fallos_consecutivos = 0  # el portal respondió; el problema es del dato, no del sitio
 
                 elif FRASE_LIMPIA in texto_pantalla.upper():
                     ruta_final_guardado = ruta_esperada_normal
@@ -197,6 +212,7 @@ try:
                         file.write(base64.b64decode(pdf_data['data']))
 
                     print("PDF guardado correctamente.")
+                    fallos_consecutivos = 0
 
                 else:
                     ruta_final_guardado = ruta_esperada_inhab
@@ -214,6 +230,7 @@ try:
                         file.write(base64.b64decode(pdf_data['data']))
 
                     print("PDF guardado correctamente.")
+                    fallos_consecutivos = 0
 
             except Exception:
                 print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc}. Se guarda una captura de pantalla en la carpeta de alertas para revisión manual...")
@@ -221,11 +238,18 @@ try:
                 ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                 driver.save_screenshot(ruta_error)
                 lista_alertas_finales.append(nombre_error.replace(".png", ""))
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
 
         except Exception as e:
             print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
             print("Se salta a la siguiente persona...")
             errores_no_manejados += 1
+            fallos_consecutivos += 1
+            if circuito_abierto(fallos_consecutivos):
+                break
             continue
 
         time.sleep(1)

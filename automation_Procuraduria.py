@@ -129,6 +129,19 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
     return alertas_encontradas
 
+def circuito_abierto(fallos_consecutivos, nombre_entidad="la Procuraduría"):
+    """
+    Si el portal falla dos veces seguidas por algo técnico (no por un dato puntual
+    de la persona), lo más probable es un bloqueo de IP o una caída temporal.
+    Seguir intentando con el resto solo perdería tiempo, así que se corta aquí.
+    """
+    if fallos_consecutivos >= 2:
+        print(f"\nSe detectaron {fallos_consecutivos} fallos técnicos consecutivos en el portal de {nombre_entidad}.")
+        print("Es posible que esté bloqueando las solicitudes automatizadas o esté caído en este momento.")
+        print("Se detiene esta verificación para no perder más tiempo.")
+        return True
+    return False
+
 # ==========================================
 # 1. CONFIGURACIÓN Y RUTAS
 # ==========================================
@@ -177,6 +190,7 @@ driver = webdriver.Chrome(options=opciones)
 wait = WebDriverWait(driver, 25)
 
 errores_no_manejados = 0
+fallos_consecutivos = 0
 
 try:
     for index, row in df.iterrows():
@@ -231,6 +245,10 @@ try:
             except Exception:
                 print("El formulario no cargó a tiempo o la página está saturada. Se salta este registro...")
                 driver.switch_to.default_content()
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
@@ -304,6 +322,7 @@ try:
             if not exito_generacion:
                 print("No se pudo superar la validación. Se salta a la siguiente persona...")
                 driver.switch_to.default_content()
+                fallos_consecutivos = 0  # el portal respondió; el problema es de esta respuesta puntual
                 continue
 
             # ==========================================
@@ -343,6 +362,10 @@ try:
             driver.switch_to.default_content()
 
             if not descarga_lista:
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             # ==========================================
@@ -369,11 +392,16 @@ try:
                 import winsound
                 winsound.Beep(2000, 1000)
 
+            fallos_consecutivos = 0
+
         except Exception as e:
             print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
             print("Se salta a la siguiente persona...")
             errores_no_manejados += 1
+            fallos_consecutivos += 1
             driver.switch_to.default_content()
+            if circuito_abierto(fallos_consecutivos):
+                break
             continue
 
 except Exception as e:

@@ -66,6 +66,20 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
     return alertas_encontradas
 
+def circuito_abierto(fallos_consecutivos, nombre_entidad="la Contraloría"):
+    """
+    Si el mismo portal falla dos veces seguidas (no por un dato puntual, sino por
+    algo técnico), lo más probable es un bloqueo de IP o una caída temporal.
+    Seguir intentando con el resto de personas solo perdería tiempo y créditos
+    de 2Captcha, así que se corta la verificación aquí.
+    """
+    if fallos_consecutivos >= 2:
+        print(f"\nSe detectaron {fallos_consecutivos} fallos técnicos consecutivos en el portal de {nombre_entidad}.")
+        print("Es posible que esté bloqueando las solicitudes automatizadas o esté caído en este momento.")
+        print("Se detiene esta verificación para no perder más tiempo ni créditos de 2Captcha.")
+        return True
+    return False
+
 def esperar_descarga(carpeta_destino, timeout=20):
     """
     Vigila la carpeta hasta que aparezca un nuevo PDF y retorna su ruta.
@@ -144,6 +158,7 @@ driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
 wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0
+fallos_consecutivos = 0
 
 try:
     for index, row in df.iterrows():
@@ -179,19 +194,25 @@ try:
             continue
 
         try:
-            driver.get("https://www.contraloria.gov.co/web/guest/persona-natural")
+            driver.get("https://cfiscal.contraloria.gov.co/Certificados/CertificadoPersonaNatural.aspx")
+            time.sleep(3)
+            url_formulario = driver.current_url
 
             # ==========================================
-            # 5. ENTRAR AL IFRAME Y EXTRAER SU URL REAL
+            # 5. VERIFICAR EL SITEKEY VIGENTE DEL RECAPTCHA
             # ==========================================
-            time.sleep(3)
+            # El sitekey puede cambiar si el portal actualiza su formulario; si eso
+            # pasa, resolver el captcha con el valor viejo produce un token inválido
+            # aunque 2Captcha diga que "lo resolvió".
+            sitekey_actual = SITE_KEY_CONTRALORIA
             try:
-                iframe_formulario = wait.until(EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'cfiscal')]")))
-                url_real_iframe = iframe_formulario.get_attribute("src")
-                driver.switch_to.frame(iframe_formulario)
+                elemento_recaptcha = driver.find_element(By.CSS_SELECTOR, "[data-sitekey]")
+                sitekey_detectada = elemento_recaptcha.get_attribute("data-sitekey")
+                if sitekey_detectada and sitekey_detectada != SITE_KEY_CONTRALORIA:
+                    print(f"Aviso: el sitekey del portal cambió (antes: {SITE_KEY_CONTRALORIA}, ahora: {sitekey_detectada}). Se usará el nuevo.")
+                    sitekey_actual = sitekey_detectada
             except Exception:
-                print("No se detectó el iframe, se usa la URL principal...")
-                url_real_iframe = driver.current_url
+                print("No se pudo leer el sitekey del portal; se sigue usando el conocido.")
 
             # CAMPO: Tipo de documento
             elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "ddlTipoDocumento")))
@@ -222,7 +243,7 @@ try:
             while intentos < max_intentos and not captcha_resuelto:
                 try:
                     print(f"Enviando reCAPTCHA a 2Captcha (intento {intentos + 1}/{max_intentos})...")
-                    resultado = solver.recaptcha(sitekey=SITE_KEY_CONTRALORIA, url=url_real_iframe)
+                    resultado = solver.recaptcha(sitekey=sitekey_actual, url=url_formulario)
                     codigo_token = resultado['code']
                     print("reCAPTCHA resuelto correctamente.")
 
@@ -240,7 +261,10 @@ try:
 
             if not captcha_resuelto:
                 print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
-                driver.switch_to.default_content()
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             # ==========================================
@@ -250,15 +274,15 @@ try:
             btn_buscar = wait.until(EC.element_to_be_clickable((By.ID, "btnBuscar")))
             driver.execute_script("arguments[0].click();", btn_buscar)
 
-            driver.switch_to.default_content()
-
             print("Esperando la descarga automática del PDF...")
             ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
 
             if not ruta_descargada:
                 print("Se agotó el tiempo de espera. El portal de la Contraloría no generó el archivo.")
-                print("Vuelve a correr el script: esta persona se reintentará automáticamente.")
                 errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             try:
@@ -278,6 +302,9 @@ try:
                 print("El archivo descargado no parece un certificado válido. Se descarta y se reintentará más tarde...")
                 os.remove(ruta_descargada)
                 errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             frase_normalizada = "".join(FRASE_LIMPIA.split())
@@ -294,12 +321,15 @@ try:
 
             shutil.move(ruta_descargada, ruta_final)
             print("Documento procesado correctamente.")
+            fallos_consecutivos = 0
 
         except Exception as e:
             print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
             print("Se salta a la siguiente persona...")
             errores_no_manejados += 1
-            driver.switch_to.default_content()
+            fallos_consecutivos += 1
+            if circuito_abierto(fallos_consecutivos):
+                break
             continue
 
 except Exception as e:
