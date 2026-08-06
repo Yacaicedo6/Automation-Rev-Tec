@@ -65,6 +65,19 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
     return alertas_encontradas
 
+def circuito_abierto(fallos_consecutivos, nombre_entidad="Judicial de la Policía"):
+    """
+    Si el portal falla dos veces seguidas por algo técnico (no por un dato puntual
+    de la persona), lo más probable es un bloqueo de IP o una caída temporal.
+    Seguir intentando con el resto solo perdería tiempo, así que se corta aquí.
+    """
+    if fallos_consecutivos >= 2:
+        print(f"\nSe detectaron {fallos_consecutivos} fallos técnicos consecutivos en el portal {nombre_entidad}.")
+        print("Es posible que esté bloqueando las solicitudes automatizadas o esté caído en este momento.")
+        print("Se detiene esta verificación para no perder más tiempo.")
+        return True
+    return False
+
 # ==========================================
 # 2. RUTAS Y LECTURA DE DATOS
 # ==========================================
@@ -117,6 +130,7 @@ driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
 wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0
+fallos_consecutivos = 0
 
 try:
     for index, row in df.iterrows():
@@ -219,6 +233,10 @@ try:
 
             if not captcha_resuelto:
                 print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
                 continue
 
             # ==========================================
@@ -260,6 +278,7 @@ try:
 
             if not exito_generacion:
                 print("No se pudo superar la validación. Se salta a la siguiente persona...")
+                fallos_consecutivos = 0  # hubo intervención humana; el portal está respondiendo
                 continue
 
             # ==========================================
@@ -293,14 +312,22 @@ try:
                     f.write(base64.b64decode(pdf_data['data']))
 
                 print("Documento guardado correctamente.")
+                fallos_consecutivos = 0
 
             except Exception as e:
                 print(f"Error inesperado al analizar o generar el PDF: {e}")
+                errores_no_manejados += 1
+                fallos_consecutivos += 1
+                if circuito_abierto(fallos_consecutivos):
+                    break
 
         except Exception as e:
             print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
             print("Se salta a la siguiente persona...")
             errores_no_manejados += 1
+            fallos_consecutivos += 1
+            if circuito_abierto(fallos_consecutivos):
+                break
             continue
 
 except Exception as e:
