@@ -5,103 +5,294 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 import time
+import os
+import base64
+import shutil
+import PyPDF2
+from twocaptcha import TwoCaptcha
+from dotenv import load_dotenv
 
 # ==========================================
-# 1. CONFIGURACIÓN Y LECTURA DEL EXCEL
+# 0. CONFIGURACIÓN SEGURA
 # ==========================================
-ruta_excel = r"ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+load_dotenv()
 
-print("Leyendo el archivo Excel...")
-# Leer la primera hoja, usando la fila 29 como encabezados (índice 28)
+API_KEY_2CAPTCHA = os.getenv("API_KEY_2CAPTCHA")
+# SiteKey extraído exitosamente del iframe
+SITE_KEY_POLICIA = "6LcsIwQaAAAAAFCsaI-dkR6hgKsZwwJRsmE0tIJH"
+
+if not API_KEY_2CAPTCHA:
+    raise ValueError(
+        "❌ ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
+        "Asegúrate de que el archivo .env existe y está configurado."
+    )
+
+solver = TwoCaptcha(API_KEY_2CAPTCHA)
+
+# ==========================================
+# 1. FUNCIÓN DE AUDITORÍA RETROACTIVA
+# ==========================================
+def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
+    """
+    Lee los PDF ya descargados. Si no dicen 'NO TIENE ASUNTOS PENDIENTES', 
+    los mueve a la carpeta de alertas.
+    """
+    alertas_encontradas = []
+    
+    for archivo in os.listdir(carpeta_origen):
+        if archivo.endswith('.pdf'):
+            ruta_pdf = os.path.join(carpeta_origen, archivo)
+            
+            try:
+                with open(ruta_pdf, 'rb') as f:
+                    lector = PyPDF2.PdfReader(f)
+                    texto_pdf = ""
+                    for pagina in lector.pages:
+                        texto_pdf += pagina.extract_text() or ""
+                
+                # Normalización Pythonica: Eliminar todos los espacios y saltos de línea
+                texto_limpio = "".join(texto_pdf.upper().split())
+                
+                # Frase clave normalizada
+                if "NOTIENEASUNTOSPENDIENTES" not in texto_limpio:
+                    ruta_nueva = os.path.join(carpeta_alertas, archivo)
+                    shutil.move(ruta_pdf, ruta_nueva)
+                    alertas_encontradas.append(archivo.replace(".pdf", ""))
+            
+            except Exception as e:
+                print(f"⚠️ No se pudo auditar el archivo {archivo}: {e}")
+                
+    return alertas_encontradas
+
+# ==========================================
+# 2. RUTAS Y LECTURA DE DATOS
+# ==========================================
+ruta_excel = r"E:\COMPUTADOR YAN\ALCALDIA DE CALI\2026\2026-2\ESTIMULOS\REV TEC ADMIN\REV TEC ADMIN MUNDIAL DE SALSA\ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+
+directorio_base = os.path.dirname(ruta_excel)
+carpeta_destino = os.path.join(directorio_base, "Certificados_Policia")
+carpeta_inhabilitados = os.path.join(directorio_base, "Certificados_Policia_INHABILITADOS")
+
+# Crear carpetas si no existen
+os.makedirs(carpeta_destino, exist_ok=True)
+os.makedirs(carpeta_inhabilitados, exist_ok=True)
+
+# Ejecutar auditoría antes de iniciar la automatización
+print("🔍 Auditando certificados previamente descargados...")
+alertas_historicas = auditar_descargas_anteriores(carpeta_destino, carpeta_inhabilitados)
+if alertas_historicas:
+    print(f"⚠️ Se movieron {len(alertas_historicas)} certificados sospechosos a la carpeta de INHABILITADOS.")
+
+print("\nLeyendo el archivo Excel...")
 df = pd.read_excel(ruta_excel, sheet_name=0, header=28)
-
-# Limpiar los nombres de las columnas para evitar errores de espacios invisibles
 df.columns = df.columns.str.strip()
-
-# Filtrar: Quitar las filas que no tengan Número de Documento (como las que dicen "MUJERES" o "HOMBRES")
 df = df.dropna(subset=['# DOC. IDENTIDAD'])
 
+lista_alertas_finales = alertas_historicas.copy()
+
 # ==========================================
-# 2. INICIAR NAVEGADOR Y AUTOMATIZACIÓN
+# 3. CONFIGURAR NAVEGADOR
 # ==========================================
-driver = webdriver.Chrome()
+opciones = webdriver.ChromeOptions()
+opciones.add_argument("--ignore-certificate-errors") 
+
+driver = webdriver.Chrome(options=opciones)
 wait = WebDriverWait(driver, 15)
 
 try:
-    # 3. Iterar sobre cada persona en el Excel
     for index, row in df.iterrows():
-        # Extracción y limpieza de datos
-        tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
         num_doc = str(row['# DOC. IDENTIDAD']).strip()
         
-        # Quitar decimales si Excel lo lee como número flotante (ej: 66915081.0 -> 66915081)
+        if not num_doc[0].isdigit():
+            continue
         if num_doc.endswith('.0'):
             num_doc = num_doc[:-2]
-            
-        # Formatear la fecha a DD/MM/AAAA
-        try:
-            fecha_obj = pd.to_datetime(row['FECHA DE EXPEDICION (DD/MM/AA)'])
-            fecha_exp = fecha_obj.strftime('%d/%m/%Y')
-        except:
-            fecha_exp = str(row['FECHA DE EXPEDICION (DD/MM/AA)'])
 
-        print(f"\n--- Procesando Documento: {num_doc} ({tipo_doc_crudo}) ---")
+        tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
         
-        # Navegar a la página limpia para cada registro
-        driver.get("https://antecedentes.policia.gov.co:7005/WebJudicial/antecedentes.xhtml")
+        p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
+        s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
+        p_apellido = str(row['PRIMER APELLIDO']) if pd.notna(row['PRIMER APELLIDO']) else ""
+        s_apellido = str(row['SEGUNDO APELLIDO']) if pd.notna(row['SEGUNDO APELLIDO']) else ""
+        nombre_completo = f"{p_nombre} {s_nombre} {p_apellido} {s_apellido}".replace("  ", " ").strip()
+
+        print(f"\n--- Procesando Documento: {num_doc} ({nombre_completo}) ---")
+
+        # ==========================================
+        # 4. VALIDACIÓN PREVIA (LOOK BEFORE YOU LEAP)
+        # ==========================================
+        nombre_limpio = "".join(c for c in nombre_completo if c.isalnum() or c in " -_").strip()
+        nombre_archivo_esperado = f"Policia-{nombre_limpio}.pdf"
         
-        # CAMPO: Tipo de documento (Usando el ID "tipo")
-        elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "tipo")))
+        ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
+        ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
+        
+        if os.path.exists(ruta_esperada_normal) or os.path.exists(ruta_esperada_inhab):
+            print(f"⏭️ El certificado ya existe en los registros. Omitiendo descarga...")
+            continue
+
+        # ==========================================
+        # 5. NAVEGACIÓN Y TÉRMINOS DE USO CONDICIONALES
+        # ==========================================
+        driver.get("https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml")
+        
+        try:
+            # Esperamos máximo 3 segundos a ver si aparece el botón de "Acepto"
+            radio_acepto = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.ID, "aceptaOption:0")))
+            driver.execute_script("arguments[0].click();", radio_acepto)
+            time.sleep(1)
+            
+            # Buscar el botón Enviar y hacer clic
+            btn_enviar = driver.find_element(By.XPATH, "//span[text()='Enviar']/parent::button | //button[contains(., 'Enviar')]")
+            driver.execute_script("arguments[0].click();", btn_enviar)
+            print("✅ Términos de uso aceptados.")
+            time.sleep(3) # Pausa para que cargue el formulario principal
+        except:
+            pass # Si no aparece el botón en 3 segundos, ya estamos en el formulario
+
+        # ==========================================
+        # 6. LLENAR FORMULARIO
+        # ==========================================
+        elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "cedulaTipo")))
         selector_tipo_doc = Select(elemento_tipo_doc)
         
-        # Seleccionar por 'value' según el HTML de la página
         if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("CC") 
+            selector_tipo_doc.select_by_value("cc") 
         elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("CX")
+            selector_tipo_doc.select_by_value("cx")
         elif "PA" in tipo_doc_crudo.upper() or "PASAPORTE" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("PA")
+            selector_tipo_doc.select_by_value("pa")
         else:
-            print(f"⚠️ Tipo de doc desconocido: {tipo_doc_crudo}. Intentando con Cédula de Ciudadanía.")
-            selector_tipo_doc.select_by_value("CC")
+            selector_tipo_doc.select_by_value("cc")
 
-        # CAMPO: Número de documento (ID "nuip")
-        campo_documento = driver.find_element(By.ID, "nuip")
+        # Limpiar el campo antes de escribir para evitar concatenaciones
+        campo_documento = driver.find_element(By.ID, "cedulaInput")
+        campo_documento.clear()
         campo_documento.send_keys(num_doc)
 
-        # CAMPO: Fecha de Expedición (ID "fechaExpNuip")
-        campo_fecha = driver.find_element(By.ID, "fechaExpNuip")
-        campo_fecha.send_keys(fecha_exp)
-
-        # CAMPO: Empresa o Entidad Consultante (ID "nombreEmpresa")
-        campo_empresa = driver.find_element(By.ID, "nombreEmpresa")
-        campo_empresa.send_keys("Alcaldia de Cali")
-
-        # CAMPO: NIT de la Empresa (ID "nitEmpresa")
-        campo_nit = driver.find_element(By.ID, "nitEmpresa")
-        campo_nit.send_keys("8903990113")
-
-        # CHECKBOX: Acepto los términos de uso (ID "cbCondiciones")
-        checkbox_terminos = driver.find_element(By.ID, "cbCondiciones")
-        driver.execute_script("arguments[0].click();", checkbox_terminos)
-
-        print("Datos llenados correctamente. ⏳ Esperando que resuelvas el Captcha y des clic en 'Consultar'...")
-        
         # ==========================================
-        # 4. PAUSA ACTIVA (Human-in-the-Loop)
+        # 7. RESOLVER RECAPTCHA
         # ==========================================
-        # Espera hasta 5 minutos (300 seg) a que el botón consultar desaparezca
-        WebDriverWait(driver, 300).until(
-            EC.invisibility_of_element_located((By.ID, "btnConsultar"))
-        )
-        print(f"✅ ¡Consulta exitosa para el documento {num_doc}!")
+        intentos = 0
+        max_intentos = 3
+        captcha_resuelto = False
         
-        # Pausa breve para estabilizar el navegador antes de regresar al formulario para el siguiente
-        time.sleep(3) 
+        while intentos < max_intentos and not captcha_resuelto:
+            try:
+                print(f"⏳ Enviando reCAPTCHA a 2Captcha (Intento {intentos + 1}/{max_intentos})...")
+                resultado = solver.recaptcha(sitekey=SITE_KEY_POLICIA, url=driver.current_url)
+                codigo_token = resultado['code']
+                print("✅ reCAPTCHA resuelto con éxito.")
+                
+                driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
+                # Obligar al JavaScript a registrar el cambio
+                driver.execute_script("document.getElementById('g-recaptcha-response').dispatchEvent(new Event('change'));")
+                
+                time.sleep(1) 
+                captcha_resuelto = True
+                
+            except Exception as e:
+                intentos += 1
+                print(f"⚠️ Error de red/conexión con la API: {e}")
+                if intentos < max_intentos:
+                    time.sleep(5)
+
+        if not captcha_resuelto:
+            print(f"❌ Imposible resolver Captcha tras {max_intentos} intentos. Saltando persona...")
+            continue
+
+        # ==========================================
+        # 8. BUCLE DE VALIDACIÓN INTERACTIVA
+        # ==========================================
+        exito_generacion = False
+        intentos_validacion = 0
+        
+        while intentos_validacion < 2 and not exito_generacion:
+            print("Enviando formulario...")
+            
+            # Buscar el botón de consultar (normalmente es un botón de PrimeFaces)
+            btn_consultar = driver.find_element(By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'consultar')]")
+            driver.execute_script("arguments[0].click();", btn_consultar)
+            time.sleep(4) 
+            
+            errores_visibles = False
+            try:
+                alertas = driver.find_elements(By.XPATH, "//*[contains(@class, 'ui-messages-error') or contains(@class, 'ui-message-error')]")
+                for error in alertas:
+                    texto_error = error.text.strip()
+                    if error.is_displayed() and len(texto_error) > 2:
+                        print(f"⚠️ Alerta del portal detectada: {texto_error}")
+                        errores_visibles = True
+                        break
+            except Exception:
+                pass
+
+            if errores_visibles:
+                import winsound
+                winsound.Beep(1000, 500)
+                accion = input("⚠️ Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
+                
+                if accion.lower() == 'saltar':
+                    break
+                intentos_validacion += 1
+            else:
+                exito_generacion = True
+        
+        if not exito_generacion:
+            print("❌ No se pudo superar la validación. Saltando a la siguiente persona...")
+            continue
+
+        # ==========================================
+        # 9. ANÁLISIS DE RESULTADOS Y GENERACIÓN VÍA CDP
+        # ==========================================
+        print("Analizando pantalla de resultados...")
+        
+        try:
+            # Pausa para dar tiempo a que cargue el texto de respuesta
+            time.sleep(3) 
+            texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
+            
+            if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
+                ruta_final_guardado = ruta_esperada_normal
+                print("✅ Resultados limpios. Guardando en carpeta estándar...")
+            else:
+                ruta_final_guardado = ruta_esperada_inhab
+                print("🚨 ¡ATENCIÓN! Se detectó un posible asunto pendiente. Guardando en carpeta de alertas...")
+                lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
+                import winsound
+                winsound.Beep(2000, 1000)
+            
+            # Generar el PDF
+            pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
+                "printBackground": True,
+                "landscape": False,
+                "preferCSSPageSize": True
+            })
+            
+            with open(ruta_final_guardado, "wb") as f:
+                f.write(base64.b64decode(pdf_data['data']))
+                
+            print(f"✅ ¡Documento guardado silenciosamente!")
+                
+        except Exception as e:
+            print(f"⚠️ Error inesperado al analizar/generar el PDF: {e}")
 
 except Exception as e:
-    print(f"\n❌ Ocurrió un error inesperado durante el ciclo: {e}")
+    print(f"\n❌ Ocurrió un error inesperado durante el ciclo general: {e}")
 
 finally:
-    print("\nCerrando navegador...")
+    print("\n" + "="*50)
+    print("🚦 RESUMEN DE EJECUCIÓN Y ALERTAS 🚦")
+    print("="*50)
+    
+    if lista_alertas_finales:
+        print(f"⚠️ SE DETECTARON {len(lista_alertas_finales)} REGISTROS CON ASUNTOS PENDIENTES:")
+        for alerta in lista_alertas_finales:
+            print(f"   - {alerta}")
+        print(f"\nRevisa manualmente los documentos en la carpeta:\n{carpeta_inhabilitados}")
+    else:
+        print("✅ Todo excelente. No se encontraron registros con asuntos pendientes en esta tanda.")
+        
+    print("="*50)
+    print("Cerrando navegador...")
     driver.quit()
