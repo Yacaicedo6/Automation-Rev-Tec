@@ -161,14 +161,40 @@ try:
             # 4. ANÁLISIS DE RESULTADOS Y GENERACIÓN VÍA CDP
             # ==========================================
             try:
-                wait.until(EC.presence_of_element_located((By.XPATH, "//*[contains(text(), 'informa:')]")))
+                # Esperamos lo que aparezca primero: el resultado ("informa:") o un modal de error del portal
+                wait.until(lambda d: "informa:" in d.find_element(By.TAG_NAME, "body").text.lower()
+                                      or "error" in d.find_element(By.TAG_NAME, "body").text.lower())
                 time.sleep(2)
 
                 texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
 
-                if FRASE_LIMPIA in texto_pantalla.upper():
+                if "INFORMA:" not in texto_pantalla.upper():
+                    # El portal mostró un modal de error (p. ej. fecha de expedición incorrecta)
+                    # en vez del resultado de la consulta: es un problema del dato de origen, no del script.
+                    lineas_error = [linea.strip() for linea in texto_pantalla.splitlines() if linea.strip()]
+                    mensaje_portal = " ".join(lineas_error[:4])
+                    print(f"El portal reportó un error: {mensaje_portal}")
+                    print("Revisa el tipo/número de documento y la fecha de expedición de esta persona en el Excel.")
+
+                    nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
+                    ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
+                    driver.save_screenshot(ruta_error)
+                    lista_alertas_finales.append(nombre_error.replace(".png", ""))
+
+                elif FRASE_LIMPIA in texto_pantalla.upper():
                     ruta_final_guardado = ruta_esperada_normal
                     print("Resultado limpio. Se guarda en la carpeta estándar...")
+
+                    pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
+                        "printBackground": True,
+                        "landscape": False
+                    })
+
+                    with open(ruta_final_guardado, "wb") as file:
+                        file.write(base64.b64decode(pdf_data['data']))
+
+                    print("PDF guardado correctamente.")
+
                 else:
                     ruta_final_guardado = ruta_esperada_inhab
                     print("Atención: se detectó una posible medida correctiva pendiente. Se guarda en la carpeta de alertas...")
@@ -176,18 +202,18 @@ try:
                     import winsound
                     winsound.Beep(2000, 1000)
 
-                pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
-                    "printBackground": True,
-                    "landscape": False
-                })
+                    pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
+                        "printBackground": True,
+                        "landscape": False
+                    })
 
-                with open(ruta_final_guardado, "wb") as file:
-                    file.write(base64.b64decode(pdf_data['data']))
+                    with open(ruta_final_guardado, "wb") as file:
+                        file.write(base64.b64decode(pdf_data['data']))
 
-                print("PDF guardado correctamente.")
+                    print("PDF guardado correctamente.")
 
             except Exception:
-                print(f"No se pudo procesar el resultado de {num_doc}. Se guarda una captura de pantalla en la carpeta de alertas para revisión manual...")
+                print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc}. Se guarda una captura de pantalla en la carpeta de alertas para revisión manual...")
                 nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
                 ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                 driver.save_screenshot(ruta_error)
