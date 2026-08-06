@@ -74,6 +74,13 @@ def leer_personas(ruta_excel):
         try:
             df_hoja = pd.read_excel(ruta_excel, sheet_name=nombre_hoja, header=28)
             df_hoja.columns = df_hoja.columns.str.strip()
+
+            # Algunas hojas nombran esta columna sin el sufijo "(DD/MM/AA)"; se
+            # normaliza para que no queden como dos columnas distintas al combinar.
+            for columna in list(df_hoja.columns):
+                if columna.startswith('FECHA DE EXPEDICION') and columna != 'FECHA DE EXPEDICION (DD/MM/AA)':
+                    df_hoja = df_hoja.rename(columns={columna: 'FECHA DE EXPEDICION (DD/MM/AA)'})
+
             if '# DOC. IDENTIDAD' not in df_hoja.columns:
                 continue
             df_hoja = df_hoja.dropna(subset=['# DOC. IDENTIDAD'])
@@ -86,7 +93,14 @@ def leer_personas(ruta_excel):
         return pd.DataFrame()
 
     combinado = pd.concat(hojas_validas, ignore_index=True)
-    return combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'])
+
+    # Si la misma persona aparece varias veces (distintos roles o secciones),
+    # nos quedamos con la fila más completa (menos datos vacíos), no con la
+    # primera que aparezca, que puede estar incompleta.
+    combinado['_completitud'] = combinado.notna().sum(axis=1)
+    combinado = combinado.sort_values('_completitud', ascending=False)
+    combinado = combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'], keep='first')
+    return combinado.drop(columns=['_completitud'])
 
 # ==========================================
 # 1. CONFIGURACIÓN Y LECTURA DEL EXCEL
@@ -101,10 +115,16 @@ if not os.path.isfile(ruta_excel):
     raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
 
 directorio_base = os.path.dirname(ruta_excel)
-carpeta_destino = os.path.join(directorio_base, "Certificados_RNMC")
-carpeta_inhabilitados = os.path.join(directorio_base, "Certificados_RNMC_INHABILITADOS")
+carpeta_destino = os.path.join(directorio_base, "Cert_RNMC")
+carpeta_inhabilitados = os.path.join(directorio_base, "Cert_RNMC_INHABILITADOS")
 os.makedirs(carpeta_destino, exist_ok=True)
 os.makedirs(carpeta_inhabilitados, exist_ok=True)
+
+# Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
+# Se siguen revisando para no volver a descargar (y gastar tiempo/créditos) lo
+# que ya quedó guardado ahí.
+carpeta_destino_vieja = os.path.join(directorio_base, "Certificados_RNMC")
+carpeta_inhabilitados_vieja = os.path.join(directorio_base, "Certificados_RNMC_INHABILITADOS")
 
 print("Auditando certificados previamente descargados...")
 alertas_historicas = auditar_descargas_anteriores(carpeta_destino, carpeta_inhabilitados)
@@ -159,11 +179,19 @@ try:
         # ==========================================
         # 3. VALIDACIÓN PREVIA (LOOK BEFORE YOU LEAP)
         # ==========================================
-        nombre_archivo_esperado = f"{nombre_completo} - {num_doc} - RNMC.pdf"
+        # Nombre y carpeta cortos para no exceder el límite de ruta de Windows.
+        # También se reconocen la carpeta y el nombre largos de antes de este
+        # cambio, para no volver a descargar lo que ya se había guardado ahí.
+        primer_nombre_archivo = "".join(c for c in p_nombre.strip() if c.isalnum()) or "SN"
+        nombre_archivo_esperado = f"RNMC_{primer_nombre_archivo}_{num_doc}.pdf"
         ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
 
-        if os.path.exists(ruta_esperada_normal) or os.path.exists(ruta_esperada_inhab):
+        nombre_archivo_viejo = f"{nombre_completo} - {num_doc} - RNMC.pdf"
+        ruta_vieja_normal = os.path.join(carpeta_destino_vieja, nombre_archivo_viejo)
+        ruta_vieja_inhab = os.path.join(carpeta_inhabilitados_vieja, nombre_archivo_viejo)
+
+        if any(os.path.exists(r) for r in (ruta_esperada_normal, ruta_esperada_inhab, ruta_vieja_normal, ruta_vieja_inhab)):
             print("El certificado ya existe en los registros. Se omite la descarga...")
             continue
 
@@ -221,7 +249,7 @@ try:
                     print(f"El portal reportó un error: {mensaje_portal}")
                     print("Revisa el tipo/número de documento y la fecha de expedición de esta persona en el Excel.")
 
-                    nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
+                    nombre_error = f"ERROR_{num_doc}.png"
                     ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                     driver.save_screenshot(ruta_error)
                     lista_alertas_finales.append(nombre_error.replace(".png", ""))
@@ -262,7 +290,7 @@ try:
 
             except Exception:
                 print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc}. Se guarda una captura de pantalla en la carpeta de alertas para revisión manual...")
-                nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
+                nombre_error = f"ERROR_{num_doc}.png"
                 ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                 driver.save_screenshot(ruta_error)
                 lista_alertas_finales.append(nombre_error.replace(".png", ""))
