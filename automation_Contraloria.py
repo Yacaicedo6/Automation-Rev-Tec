@@ -6,6 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 import time
 import os
+import sys
 from twocaptcha import TwoCaptcha
 from dotenv import load_dotenv
 
@@ -19,7 +20,7 @@ SITE_KEY_CONTRALORIA = "6LcfnjwUAAAAAIyl8ehhox7ZYqLQSVl_w1dmYIle"
 
 if not API_KEY_2CAPTCHA:
     raise ValueError(
-        "❌ ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
+        "ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
         "Asegúrate de que el archivo .env existe en la misma carpeta del script "
         "y contiene la línea: API_KEY_2CAPTCHA=tu_clave_aqui"
     )
@@ -27,8 +28,15 @@ if not API_KEY_2CAPTCHA:
 # Inicializar el servicio de 2Captcha
 solver = TwoCaptcha(API_KEY_2CAPTCHA)
 
-# Ruta absoluta del archivo Excel
-ruta_excel = r"E:\COMPUTADOR YAN\ALCALDIA DE CALI\2026\2026-2\ESTIMULOS\REV TEC ADMIN\REV TEC ADMIN MUNDIAL DE SALSA\ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+# Ruta del archivo Excel con la información de los postulantes
+def obtener_ruta_excel():
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+
+ruta_excel = obtener_ruta_excel()
+if not os.path.isfile(ruta_excel):
+    raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
 
 # Crear carpeta para los PDF descargados
 directorio_base = os.path.dirname(ruta_excel)
@@ -91,7 +99,7 @@ try:
             url_real_iframe = iframe_formulario.get_attribute("src")
             driver.switch_to.frame(iframe_formulario)
         except Exception as e:
-            print("⚠️ No se detectó el iframe, usando URL principal...")
+            print("No se detectó el iframe, se usa la URL principal...")
             url_real_iframe = driver.current_url
             
         # CAMPO: Tipo de documento
@@ -122,25 +130,25 @@ try:
         
         while intentos < max_intentos and not captcha_resuelto:
             try:
-                print(f"⏳ Enviando reCAPTCHA a 2Captcha (Intento {intentos + 1}/{max_intentos})...")
+                print(f"Enviando reCAPTCHA a 2Captcha (intento {intentos + 1}/{max_intentos})...")
                 resultado = solver.recaptcha(sitekey=SITE_KEY_CONTRALORIA, url=url_real_iframe)
                 codigo_token = resultado['code']
-                print("✅ reCAPTCHA resuelto con éxito.")
-                
+                print("reCAPTCHA resuelto correctamente.")
+
                 # Inyectar la respuesta del token
                 driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
-                time.sleep(1) 
+                time.sleep(1)
                 captcha_resuelto = True
-                
+
             except Exception as e:
                 intentos += 1
-                print(f"⚠️ Error de red/conexión: {e}")
+                print(f"Error de red o conexión: {e}")
                 if intentos < max_intentos:
-                    print("🔄 Reintentando en 5 segundos...")
+                    print("Reintentando en 5 segundos...")
                     time.sleep(5)
 
         if not captcha_resuelto:
-            print(f"❌ Imposible resolver Captcha tras {max_intentos} intentos. Saltando a la siguiente persona...")
+            print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
             driver.switch_to.default_content() 
             continue
 
@@ -154,12 +162,12 @@ try:
         print("Esperando la descarga automática del PDF...")
         time.sleep(10) 
 
-        print("✅ Documento procesado correctamente.")
-        
+        print("Documento procesado correctamente.")
+
         driver.switch_to.default_content()
 
 except Exception as e:
-    print(f"\n❌ Ocurrió un error inesperado durante el ciclo: {e}")
+    print(f"\nOcurrió un error inesperado durante el ciclo: {e}")
 
 finally:
     print("\nCerrando navegador...")
