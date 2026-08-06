@@ -104,7 +104,16 @@ lista_alertas_finales = alertas_historicas.copy()
 opciones = webdriver.ChromeOptions()
 opciones.add_argument("--ignore-certificate-errors")
 
+# Ocultar las señales típicas de que Chrome está siendo controlado por Selenium,
+# ya que algunos portales con reCAPTCHA responden con error cuando las detectan.
+opciones.add_argument("--disable-blink-features=AutomationControlled")
+opciones.add_experimental_option("excludeSwitches", ["enable-automation"])
+opciones.add_experimental_option("useAutomationExtension", False)
+
 driver = webdriver.Chrome(options=opciones)
+driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+    "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+})
 wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0

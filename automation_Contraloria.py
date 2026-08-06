@@ -130,8 +130,17 @@ prefs = {
 }
 opciones.add_experimental_option("prefs", prefs)
 
+# Ocultar las señales típicas de que Chrome está siendo controlado por Selenium,
+# ya que algunos portales con reCAPTCHA responden con error cuando las detectan.
+opciones.add_argument("--disable-blink-features=AutomationControlled")
+opciones.add_experimental_option("excludeSwitches", ["enable-automation"])
+opciones.add_experimental_option("useAutomationExtension", False)
+
 # Iniciar navegador Chrome
 driver = webdriver.Chrome(options=opciones)
+driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+    "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+})
 wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0
@@ -260,7 +269,16 @@ try:
                         texto_pdf += pagina.extract_text() or ""
                 texto_limpio = "".join(texto_pdf.upper().split())
             except Exception:
-                texto_limpio = ""
+                texto_limpio = None
+
+            if texto_limpio is None or len(texto_limpio) < 50:
+                # El archivo descargado no es un certificado legible (posible página de error
+                # guardada como PDF). No lo clasificamos como hallazgo: se descarta y se
+                # reintenta en la siguiente corrida.
+                print("El archivo descargado no parece un certificado válido. Se descarta y se reintentará más tarde...")
+                os.remove(ruta_descargada)
+                errores_no_manejados += 1
+                continue
 
             frase_normalizada = "".join(FRASE_LIMPIA.split())
 
