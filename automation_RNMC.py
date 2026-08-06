@@ -154,7 +154,10 @@ try:
                 pass
 
             print("Datos llenados. Consultando...")
-            btn_buscar = driver.find_element(By.ID, "ctl00_ContentPlaceHolder3_btnConsultar2")
+            # El portal es ASP.NET clásico: cambiar el tipo de documento o la fecha puede
+            # recargar parte de la página, así que esperamos a que el botón esté listo
+            # en vez de buscarlo de inmediato.
+            btn_buscar = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder3_btnConsultar2")))
             driver.execute_script("arguments[0].click();", btn_buscar)
 
             # ==========================================

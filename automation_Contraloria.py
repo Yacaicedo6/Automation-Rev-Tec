@@ -238,16 +238,18 @@ try:
             # 7. EJECUTAR BÚSQUEDA Y ANALIZAR LA DESCARGA
             # ==========================================
             print("Datos y token listos. Consultando...")
-            btn_buscar = driver.find_element(By.ID, "btnBuscar")
+            btn_buscar = wait.until(EC.element_to_be_clickable((By.ID, "btnBuscar")))
             driver.execute_script("arguments[0].click();", btn_buscar)
 
             driver.switch_to.default_content()
 
             print("Esperando la descarga automática del PDF...")
-            ruta_descargada = esperar_descarga(carpeta_destino, timeout=20)
+            ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
 
             if not ruta_descargada:
                 print("Se agotó el tiempo de espera. El portal de la Contraloría no generó el archivo.")
+                print("Vuelve a correr el script: esta persona se reintentará automáticamente.")
+                errores_no_manejados += 1
                 continue
 
             try:
