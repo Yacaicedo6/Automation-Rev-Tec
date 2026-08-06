@@ -6,15 +6,15 @@ Por cada persona listada en el Excel de un postulante (grupo conformado o repres
 
 ## Verificaciones que realiza
 
-| Script | Entidad | Qué consulta | Carpeta de salida |
-|---|---|---|---|
-| `automation_RNMC.py` | Policía Nacional | Registro Nacional de Medidas Correctivas | `Certificados_RNMC/` |
-| `automation_Contraloria.py` | Contraloría | Antecedentes fiscales | `Certificados_Contraloria/` |
-| `automation_Procuraduria.py` | Procuraduría | Antecedentes disciplinarios | `Certificados_Procuraduria/` |
-| `automation_Judicial.py` | Policía Nacional | Antecedentes judiciales | `Certificados_Policia/` (o `_INHABILITADOS`) |
-| `automation_DelitosSexuales.py` | Policía Nacional | Inhabilidad por delitos sexuales | `Certificados_Delitos_Sexuales/` (o `_INHABILITADOS`) |
+| Script | Entidad | Qué consulta | Frase de resultado limpio | Carpeta de salida |
+|---|---|---|---|---|
+| `automation_RNMC.py` | Policía Nacional | Registro Nacional de Medidas Correctivas | "NO TIENE MEDIDAS CORRECTIVAS PENDIENTES POR CUMPLIR" | `Certificados_RNMC/` (o `_INHABILITADOS`) |
+| `automation_Contraloria.py` | Contraloría | Antecedentes fiscales | "NO SE ENCUENTRA REPORTADO COMO RESPONSABLE FISCAL" | `Certificados_Contraloria/` (o `_INHABILITADOS`) |
+| `automation_Procuraduria.py` | Procuraduría | Antecedentes disciplinarios | "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES" | `Certificados_Procuraduria/` (o `_INHABILITADOS`) |
+| `automation_Judicial.py` | Policía Nacional | Antecedentes judiciales | "NO TIENE ASUNTOS PENDIENTES" | `Certificados_Policia/` (o `_INHABILITADOS`) |
+| `automation_DelitosSexuales.py` | Policía Nacional | Inhabilidad por delitos sexuales | "NO REGISTRA INHABILIDAD" | `Certificados_Delitos_Sexuales/` (o `_INHABILITADOS`) |
 
-Las carpetas de salida se crean junto al Excel que se use como fuente de datos. Cuando un resultado no es "limpio" (por ejemplo, sí registra algún asunto pendiente), el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente para que quede visible y se revise a mano.
+Las carpetas de salida se crean junto al Excel que se use como fuente de datos. Cuando el texto del resultado no contiene la frase de "resultado limpio" de esa entidad (por ejemplo, sí registra algún asunto pendiente), el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente, con un aviso sonoro, para que quede visible y se revise a mano.
 
 ## Requisitos
 
@@ -55,7 +55,7 @@ Las filas que no empiezan con un número de documento (encabezados, subtítulos)
 python ejecutar_revision.py
 ```
 
-Te va a pedir el Excel (con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Al final imprime un resumen de cuáles terminaron bien y cuáles con error.
+Te va a pedir el Excel (con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Si una verificación termina con errores, se detiene y te pregunta si quieres seguir con la siguiente o parar ahí para revisar. Al final imprime un resumen de cuáles terminaron bien, cuáles con error y cuáles no llegaron a ejecutarse.
 
 ### Ejecutar un script individual
 
@@ -72,10 +72,11 @@ Algunos portales piden validaciones adicionales que los scripts no pueden resolv
 - **Procuraduría** hace una pregunta de seguridad dinámica (operación matemática, datos del nombre/documento, capital de un departamento). El script intenta resolverla solo; si no reconoce el patrón, te pide la respuesta por consola.
 - **Judicial** y **Delitos Sexuales** reintentan automáticamente si el portal muestra un error, y si persiste te piden corregirlo a mano en la ventana de Chrome (con un beep de aviso) antes de reintentar.
 
-## Idempotencia y auditoría
+## Idempotencia, auditoría y manejo de errores
 
-- Antes de descargar, cada script revisa si ya existe el certificado esperado (por nombre de archivo) y lo omite si ya está.
-- `automation_Judicial.py` y `automation_DelitosSexuales.py` además auditan, al iniciar, los PDF ya descargados: si el texto no contiene la frase de "sin novedades" esperada, el archivo se mueve a la carpeta `_INHABILITADOS` aunque ya estuviera descargado.
+- Antes de descargar, cada script revisa si ya existe el certificado esperado (por nombre de archivo, en la carpeta normal o en `_INHABILITADOS`) y lo omite si ya está.
+- Los 5 scripts auditan, al iniciar, los PDF ya descargados: si el texto no contiene la frase de "resultado limpio" de esa entidad, el archivo se mueve a `_INHABILITADOS` aunque ya estuviera descargado. Esto sirve como red de seguridad si algún certificado se guardó antes de que existiera esta verificación.
+- Si un error inesperado (red, portal caído, elemento no encontrado) interrumpe la consulta de una persona puntual, el script lo registra y sigue con la siguiente en vez de detener todo el lote. Al final indica cuántas personas quedaron sin procesar y termina con un código de error para que `ejecutar_revision.py` (o tú, si corres el script suelto) se entere y puedas volver a correrlo — lo ya descargado se omite automáticamente gracias a la idempotencia.
 
 ## Privacidad y seguridad
 

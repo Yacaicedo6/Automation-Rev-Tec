@@ -67,8 +67,21 @@ def main():
         print("=" * 60)
 
         proceso = subprocess.run([sys.executable, str(ruta_script), ruta_excel])
-        resultados.append((nombre, proceso.returncode == 0))
+        exito = proceso.returncode == 0
+        resultados.append((nombre, exito))
 
+        if not exito:
+            print(f"\n'{nombre}' terminó con errores (código {proceso.returncode}).")
+            print("Revisa el detalle arriba antes de seguir: puede que falten personas por procesar.")
+            continuar = input("¿Continuar con la siguiente verificación de todas formas? (s/n): ").strip().lower()
+            if continuar != "s":
+                print("Ejecución detenida por el usuario.")
+                break
+
+    mostrar_resumen(resultados)
+
+
+def mostrar_resumen(resultados):
     print("\n" + "=" * 60)
     print("Resumen de ejecución")
     print("=" * 60)
@@ -76,6 +89,14 @@ def main():
         estado = "completado" if ok else "terminó con errores"
         print(f"  [{estado}] {nombre}")
 
+    pendientes = [nombre for nombre, _ in VERIFICACIONES if nombre not in [n for n, _ in resultados]]
+    for nombre in pendientes:
+        print(f"  [no ejecutado] {nombre}")
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nEjecución interrumpida por el usuario (Ctrl+C).")
+        sys.exit(1)
