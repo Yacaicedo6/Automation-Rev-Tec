@@ -34,16 +34,16 @@ solver = TwoCaptcha(API_KEY_2CAPTCHA)
 # ==========================================
 def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     """
-    Lee los PDF ya descargados. Si no dicen 'NO REGISTRA INHABILIDAD', 
+    Lee los PDF ya descargados. Si no dicen 'NO REGISTRA INHABILIDAD',
     los mueve a la carpeta de alertas.
     """
     alertas_encontradas = []
-    
+
     # Recorrer los archivos en la carpeta normal
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
-            
+
             try:
                 # Leer el texto interno del PDF
                 with open(ruta_pdf, 'rb') as f:
@@ -51,17 +51,17 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                     texto_pdf = ""
                     for pagina in lector.pages:
                         texto_pdf += pagina.extract_text() or ""
-                
+
                 # Clasificar y mover si es necesario
                 if "NO REGISTRA INHABILIDAD" not in texto_pdf.upper():
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     # Mover el archivo físicamente
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
-            
+
             except Exception as e:
                 print(f"No se pudo auditar el archivo {archivo}: {e}")
-                
+
     return alertas_encontradas
 
 # ==========================================
@@ -102,22 +102,24 @@ lista_alertas_finales = alertas_historicas.copy()
 # 3. CONFIGURAR NAVEGADOR
 # ==========================================
 opciones = webdriver.ChromeOptions()
-opciones.add_argument("--ignore-certificate-errors") 
+opciones.add_argument("--ignore-certificate-errors")
 
 driver = webdriver.Chrome(options=opciones)
 wait = WebDriverWait(driver, 15)
 
+errores_no_manejados = 0
+
 try:
     for index, row in df.iterrows():
         num_doc = str(row['# DOC. IDENTIDAD']).strip()
-        
+
         if not num_doc[0].isdigit():
             continue
         if num_doc.endswith('.0'):
             num_doc = num_doc[:-2]
 
         tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
-        
+
         p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
         s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
         p_apellido = str(row['PRIMER APELLIDO']) if pd.notna(row['PRIMER APELLIDO']) else ""
@@ -137,150 +139,158 @@ try:
         # ==========================================
         nombre_limpio = "".join(c for c in nombre_completo if c.isalnum() or c in " -_").strip()
         nombre_archivo_esperado = f"DelitosSexuales-{nombre_limpio}.pdf"
-        
+
         ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
-        
+
         # Validar en ambas carpetas
         if os.path.exists(ruta_esperada_normal) or os.path.exists(ruta_esperada_inhab):
             print("El certificado ya existe en los registros. Se omite la descarga...")
             continue
 
-        # ==========================================
-        # 5. LLENAR FORMULARIO
-        # ==========================================
-        driver.get("https://inhabilidades.policia.gov.co:8080/consulta")
-        time.sleep(2)
-        
-        elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "tipo")))
-        selector_tipo_doc = Select(elemento_tipo_doc)
-        
-        if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("CC") 
-        elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("CX")
-        elif "PA" in tipo_doc_crudo.upper() or "PASAPORTE" in tipo_doc_crudo.upper():
-            selector_tipo_doc.select_by_value("PA")
-        else:
-            selector_tipo_doc.select_by_value("CC")
-
-        driver.find_element(By.ID, "nuip").send_keys(num_doc)
-        driver.find_element(By.ID, "fechaExpNuip").send_keys(fecha_exp)
-        driver.find_element(By.ID, "nombreEmpresa").send_keys("Alcaldia de Cali")
-        driver.find_element(By.ID, "nitEmpresa").send_keys("8903990113")
-
-        checkbox_terminos = driver.find_element(By.ID, "cbCondiciones")
-        driver.execute_script("arguments[0].click();", checkbox_terminos)
-
-        # ==========================================
-        # 6. RESOLVER RECAPTCHA
-        # ==========================================
-        intentos = 0
-        max_intentos = 3
-        captcha_resuelto = False
-        
-        while intentos < max_intentos and not captcha_resuelto:
-            try:
-                print(f"Enviando reCAPTCHA a 2Captcha (intento {intentos + 1}/{max_intentos})...")
-                resultado = solver.recaptcha(sitekey=SITE_KEY_POLICIA, url=driver.current_url)
-                codigo_token = resultado['code']
-                print("reCAPTCHA resuelto correctamente.")
-                
-                driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
-                driver.execute_script("document.getElementById('g-recaptcha-response').dispatchEvent(new Event('change'));")
-                
-                time.sleep(1) 
-                captcha_resuelto = True
-                
-            except Exception as e:
-                intentos += 1
-                print(f"Error de red o conexión con la API: {e}")
-                if intentos < max_intentos:
-                    time.sleep(5)
-
-        if not captcha_resuelto:
-            print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
-            continue
-
-        # ==========================================
-        # 7. BUCLE DE VALIDACIÓN INTERACTIVA
-        # ==========================================
-        exito_generacion = False
-        intentos_validacion = 0
-        
-        while intentos_validacion < 2 and not exito_generacion:
-            print("Enviando formulario...")
-            btn_consultar = driver.find_element(By.ID, "btnConsultar")
-            driver.execute_script("arguments[0].click();", btn_consultar)
-            time.sleep(3) 
-            
-            errores_visibles = False
-            try:
-                alertas = driver.find_elements(By.XPATH, "//*[contains(@class, 'alert-danger') or contains(@class, 'error') or contains(@style, 'color:Red') or contains(@style, 'color: red')]")
-                for error in alertas:
-                    texto_error = error.text.strip()
-                    if error.is_displayed() and len(texto_error) > 2:
-                        print(f"Alerta del portal detectada: {texto_error}")
-                        errores_visibles = True
-                        break
-            except Exception:
-                pass
-
-            if errores_visibles:
-                import winsound
-                winsound.Beep(1000, 500)
-                accion = input("Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
-                
-                if accion.lower() == 'saltar':
-                    break
-                intentos_validacion += 1
-            else:
-                exito_generacion = True
-        
-        if not exito_generacion:
-            print("No se pudo superar la validación. Se salta a la siguiente persona...")
-            continue
-
-        # ==========================================
-        # 8. ANÁLISIS DE RESULTADOS Y GENERACIÓN VÍA CDP
-        # ==========================================
-        print("Navegando a la pantalla de resultados...")
-        
         try:
-            xpath_botones = "//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'imprimir')]"
-            wait.until(EC.presence_of_element_located((By.XPATH, xpath_botones)))
-            time.sleep(2) 
-            
-            # --- LECTURA INTELIGENTE DEL DOM ---
-            texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
-            
-            if "NO REGISTRA INHABILIDAD" in texto_pantalla.upper():
-                ruta_final_guardado = ruta_esperada_normal
-                print("Resultados limpios. Se guarda en la carpeta estándar...")
+            # ==========================================
+            # 5. LLENAR FORMULARIO
+            # ==========================================
+            driver.get("https://inhabilidades.policia.gov.co:8080/consulta")
+            time.sleep(2)
+
+            elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "tipo")))
+            selector_tipo_doc = Select(elemento_tipo_doc)
+
+            if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
+                selector_tipo_doc.select_by_value("CC")
+            elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
+                selector_tipo_doc.select_by_value("CX")
+            elif "PA" in tipo_doc_crudo.upper() or "PASAPORTE" in tipo_doc_crudo.upper():
+                selector_tipo_doc.select_by_value("PA")
             else:
-                ruta_final_guardado = ruta_esperada_inhab
-                print("Atención: se detectó una posible inhabilidad. Se guarda en la carpeta de alertas...")
-                lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                import winsound
-                winsound.Beep(2000, 1000) # Un pitido más largo y agudo para alertarte al instante
-            
-            # Generar el PDF
-            pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
-                "printBackground": True,
-                "landscape": False,
-                "preferCSSPageSize": True
-            })
-            
-            with open(ruta_final_guardado, "wb") as f:
-                f.write(base64.b64decode(pdf_data['data']))
-                
-            print("Documento guardado correctamente.")
+                selector_tipo_doc.select_by_value("CC")
+
+            driver.find_element(By.ID, "nuip").send_keys(num_doc)
+            driver.find_element(By.ID, "fechaExpNuip").send_keys(fecha_exp)
+            driver.find_element(By.ID, "nombreEmpresa").send_keys("Alcaldia de Cali")
+            driver.find_element(By.ID, "nitEmpresa").send_keys("8903990113")
+
+            checkbox_terminos = driver.find_element(By.ID, "cbCondiciones")
+            driver.execute_script("arguments[0].click();", checkbox_terminos)
+
+            # ==========================================
+            # 6. RESOLVER RECAPTCHA
+            # ==========================================
+            intentos = 0
+            max_intentos = 3
+            captcha_resuelto = False
+
+            while intentos < max_intentos and not captcha_resuelto:
+                try:
+                    print(f"Enviando reCAPTCHA a 2Captcha (intento {intentos + 1}/{max_intentos})...")
+                    resultado = solver.recaptcha(sitekey=SITE_KEY_POLICIA, url=driver.current_url)
+                    codigo_token = resultado['code']
+                    print("reCAPTCHA resuelto correctamente.")
+
+                    driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
+                    driver.execute_script("document.getElementById('g-recaptcha-response').dispatchEvent(new Event('change'));")
+
+                    time.sleep(1)
+                    captcha_resuelto = True
+
+                except Exception as e:
+                    intentos += 1
+                    print(f"Error de red o conexión con la API: {e}")
+                    if intentos < max_intentos:
+                        time.sleep(5)
+
+            if not captcha_resuelto:
+                print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
+                continue
+
+            # ==========================================
+            # 7. BUCLE DE VALIDACIÓN INTERACTIVA
+            # ==========================================
+            exito_generacion = False
+            intentos_validacion = 0
+
+            while intentos_validacion < 2 and not exito_generacion:
+                print("Enviando formulario...")
+                btn_consultar = driver.find_element(By.ID, "btnConsultar")
+                driver.execute_script("arguments[0].click();", btn_consultar)
+                time.sleep(3)
+
+                errores_visibles = False
+                try:
+                    alertas = driver.find_elements(By.XPATH, "//*[contains(@class, 'alert-danger') or contains(@class, 'error') or contains(@style, 'color:Red') or contains(@style, 'color: red')]")
+                    for error in alertas:
+                        texto_error = error.text.strip()
+                        if error.is_displayed() and len(texto_error) > 2:
+                            print(f"Alerta del portal detectada: {texto_error}")
+                            errores_visibles = True
+                            break
+                except Exception:
+                    pass
+
+                if errores_visibles:
+                    import winsound
+                    winsound.Beep(1000, 500)
+                    accion = input("Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
+
+                    if accion.lower() == 'saltar':
+                        break
+                    intentos_validacion += 1
+                else:
+                    exito_generacion = True
+
+            if not exito_generacion:
+                print("No se pudo superar la validación. Se salta a la siguiente persona...")
+                continue
+
+            # ==========================================
+            # 8. ANÁLISIS DE RESULTADOS Y GENERACIÓN VÍA CDP
+            # ==========================================
+            print("Navegando a la pantalla de resultados...")
+
+            try:
+                xpath_botones = "//*[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'imprimir')]"
+                wait.until(EC.presence_of_element_located((By.XPATH, xpath_botones)))
+                time.sleep(2)
+
+                # --- LECTURA INTELIGENTE DEL DOM ---
+                texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
+
+                if "NO REGISTRA INHABILIDAD" in texto_pantalla.upper():
+                    ruta_final_guardado = ruta_esperada_normal
+                    print("Resultados limpios. Se guarda en la carpeta estándar...")
+                else:
+                    ruta_final_guardado = ruta_esperada_inhab
+                    print("Atención: se detectó una posible inhabilidad. Se guarda en la carpeta de alertas...")
+                    lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
+                    import winsound
+                    winsound.Beep(2000, 1000)  # Un pitido más largo y agudo para alertarte al instante
+
+                # Generar el PDF
+                pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
+                    "printBackground": True,
+                    "landscape": False,
+                    "preferCSSPageSize": True
+                })
+
+                with open(ruta_final_guardado, "wb") as f:
+                    f.write(base64.b64decode(pdf_data['data']))
+
+                print("Documento guardado correctamente.")
+
+            except Exception as e:
+                print(f"Error inesperado al analizar o generar el PDF: {e}")
 
         except Exception as e:
-            print(f"Error inesperado al analizar o generar el PDF: {e}")
+            print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
+            print("Se salta a la siguiente persona...")
+            errores_no_manejados += 1
+            continue
 
 except Exception as e:
     print(f"\nOcurrió un error inesperado durante el ciclo general: {e}")
+    sys.exit(1)
 
 finally:
     print("\n" + "="*50)
@@ -294,7 +304,11 @@ finally:
         print(f"\nRevisa manualmente los documentos en la carpeta:\n{carpeta_inhabilitados}")
     else:
         print("No se encontraron registros de inhabilidad en esta tanda.")
-        
+
     print("="*50)
     print("Cerrando navegador...")
     driver.quit()
+
+if errores_no_manejados:
+    print(f"\n{errores_no_manejados} persona(s) no se pudieron procesar por errores inesperados. Vuelve a correr este script para reintentarlas (los ya descargados se omiten automáticamente).")
+    sys.exit(1)
