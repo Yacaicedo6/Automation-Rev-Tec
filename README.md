@@ -8,13 +8,15 @@ Por cada persona listada en el Excel de un postulante (grupo conformado o repres
 
 | Script | Entidad | Qué consulta | Frase de resultado limpio | Carpeta de salida |
 |---|---|---|---|---|
-| `automation_RNMC.py` | Policía Nacional | Registro Nacional de Medidas Correctivas | "NO TIENE MEDIDAS CORRECTIVAS PENDIENTES POR CUMPLIR" | `Certificados_RNMC/` (o `_INHABILITADOS`) |
-| `automation_Contraloria.py` | Contraloría | Antecedentes fiscales | "NO SE ENCUENTRA REPORTADO COMO RESPONSABLE FISCAL" | `Certificados_Contraloria/` (o `_INHABILITADOS`) |
-| `automation_Procuraduria.py` | Procuraduría | Antecedentes disciplinarios | "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES" | `Certificados_Procuraduria/` (o `_INHABILITADOS`) |
-| `automation_Judicial.py` | Policía Nacional | Antecedentes judiciales | "NO TIENE ASUNTOS PENDIENTES" | `Certificados_Policia/` (o `_INHABILITADOS`) |
-| `automation_DelitosSexuales.py` | Policía Nacional | Inhabilidad por delitos sexuales | "NO REGISTRA INHABILIDAD" | `Certificados_Delitos_Sexuales/` (o `_INHABILITADOS`) |
+| `automation_RNMC.py` | Policía Nacional | Registro Nacional de Medidas Correctivas | "NO TIENE MEDIDAS CORRECTIVAS PENDIENTES POR CUMPLIR" | `Cert_RNMC/` (o `_INHABILITADOS`) |
+| `automation_Contraloria.py` | Contraloría | Antecedentes fiscales | "NO SE ENCUENTRA REPORTADO COMO RESPONSABLE FISCAL" | `Cert_CONT/` (o `_INHABILITADOS`) |
+| `automation_Procuraduria.py` | Procuraduría | Antecedentes disciplinarios | "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES" | `Cert_PROC/` (o `_INHABILITADOS`) |
+| `automation_Judicial.py` | Policía Nacional | Antecedentes judiciales | "NO TIENE ASUNTOS PENDIENTES" | `Cert_JUD/` (o `_INHABILITADOS`) |
+| `automation_DelitosSexuales.py` | Policía Nacional | Inhabilidad por delitos sexuales | "NO REGISTRA INHABILIDAD" | `Cert_DSEX/` (o `_INHABILITADOS`) |
 
-Las carpetas de salida se crean junto al Excel que se use como fuente de datos. Cuando el texto del resultado no contiene la frase de "resultado limpio" de esa entidad (por ejemplo, sí registra algún asunto pendiente), el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente, con un aviso sonoro, para que quede visible y se revise a mano.
+Las carpetas de salida se crean junto al Excel que se use como fuente de datos, con nombres de archivo cortos (`{CODIGO}_{PrimerNombre}_{documento}.pdf`) para no exceder el límite de ruta de Windows (260 caracteres), algo que sí llegó a pasar con carpetas de postulante muy largas combinadas con nombres completos. Cuando el texto del resultado no contiene la frase de "resultado limpio" de esa entidad (por ejemplo, sí registra algún asunto pendiente), el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente, con un aviso sonoro, para que quede visible y se revise a mano.
+
+> Antes de este cambio, las carpetas se llamaban `Certificados_Contraloria`, `Certificados_RNMC`, `Certificados_Procuraduria`, `Certificados_Policia` y `Certificados_Delitos_Sexuales`, con archivos nombrados por el nombre completo de la persona. Esas carpetas no se renombran ni se tocan: los scripts las siguen revisando además de las nuevas, para no volver a descargar (y gastar créditos de 2Captcha) lo que ya estaba guardado ahí con el formato viejo.
 
 ## Requisitos
 
@@ -38,14 +40,16 @@ API_KEY_2CAPTCHA=tu_clave_aqui
 
 ## El Excel de entrada
 
-Los scripts leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`), y una persona puede aparecer en más de una si tiene varios roles (se deduplica por número de documento). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
+Los scripts leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
 
 - `# DOC. IDENTIDAD`
 - `TIPO DOCUMENTO \n(RC - TI - PP)`
 - `PRIMER NOMBRE`, `SEGUNDO NOMBRE`, `PRIMER APELLIDO`, `SEGUNDO APELLIDO`
-- `FECHA DE EXPEDICION (DD/MM/AA)`
+- `FECHA DE EXPEDICION (DD/MM/AA)` (algunas hojas la nombran sin el sufijo `(DD/MM/AA)`; se normaliza automáticamente al combinar)
 
 Las hojas que no tengan esa estructura en la fila 29 se ignoran sin interrumpir la lectura de las demás. Las filas que no empiezan con un número de documento (encabezados repetidos, subtítulos, filas de plantilla sin diligenciar) se ignoran automáticamente.
+
+Si una persona aparece más de una vez (por ejemplo, con varios roles en distintas secciones de una misma hoja), se conserva la fila más completa — la que tenga menos celdas vacías — no la primera que aparezca.
 
 ## Uso
 
@@ -86,7 +90,7 @@ Algunos portales piden validaciones adicionales que los scripts no pueden resolv
 Este repositorio solo versiona código. Las carpetas de certificados se crean junto al Excel que uses como fuente (fuera de esta carpeta de repositorio), así que los datos personales de los postulantes nunca quedan dentro del árbol de git. Como respaldo adicional, `.gitignore` también excluye por si acaso:
 
 - `.env` (clave de 2Captcha)
-- `Certificados_Contraloria/`, `Certificados_RNMC/`, `Certificados_Procuraduria/`, `Certificados_Policia/`, `Certificados_Delitos_Sexuales/`
+- `Cert_CONT/`, `Cert_RNMC/`, `Cert_PROC/`, `Cert_JUD/`, `Cert_DSEX/` (y las carpetas `Certificados_*` del formato anterior)
 - `*.xlsx`, `*.csv`
 
 No subas manualmente Excels, PDFs de certificados ni el `.env` a este repositorio.

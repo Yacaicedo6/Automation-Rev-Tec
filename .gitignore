@@ -11,6 +11,11 @@ __pycache__/
 *.pyc
 
 # Carpetas de resultados y descargas (Para no subir PDFs ni bases de datos de personas)
+Cert_CONT/
+Cert_RNMC/
+Cert_PROC/
+Cert_JUD/
+Cert_DSEX/
 Certificados_Contraloria/
 Certificados_RNMC/
 Certificados_Procuraduria/
