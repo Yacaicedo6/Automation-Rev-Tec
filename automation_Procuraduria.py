@@ -6,6 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 import time
 import os
+import sys
 import unicodedata
 import re
 
@@ -86,7 +87,7 @@ def esperar_y_renombrar_descarga(carpeta_destino, nombre_final, timeout=30):
                     os.rename(ruta_antigua, ruta_nueva)
                     return True
                 except Exception as e:
-                    print(f"⚠️ Error al renombrar el archivo: {e}")
+                    print(f"Error al renombrar el archivo: {e}")
                     return False
         
         time.sleep(1)
@@ -96,7 +97,14 @@ def esperar_y_renombrar_descarga(carpeta_destino, nombre_final, timeout=30):
 # ==========================================
 # 1. CONFIGURACIÓN Y RUTAS
 # ==========================================
-ruta_excel = r"E:\COMPUTADOR YAN\ALCALDIA DE CALI\2026\2026-2\ESTIMULOS\REV TEC ADMIN\REV TEC ADMIN MUNDIAL DE SALSA\ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+def obtener_ruta_excel():
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+
+ruta_excel = obtener_ruta_excel()
+if not os.path.isfile(ruta_excel):
+    raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
 
 directorio_base = os.path.dirname(ruta_excel)
 carpeta_destino = os.path.join(directorio_base, "Certificados_Procuraduria")
@@ -152,7 +160,7 @@ try:
         ruta_esperada = os.path.join(carpeta_destino, nombre_archivo_esperado)
         
         if os.path.exists(ruta_esperada):
-            print(f"⏭️ El certificado ya existe en la carpeta. Omitiendo descarga...")
+            print("El certificado ya existe en la carpeta. Se omite la descarga...")
             continue
         
         # ==========================================
@@ -164,7 +172,7 @@ try:
         try:
             iframes = driver.find_elements(By.TAG_NAME, "iframe")
             if len(iframes) > 0:
-                print("🔄 Iframe detectado en la página. Cambiando el contexto...")
+                print("Iframe detectado en la página. Cambiando el contexto...")
                 driver.switch_to.frame(iframes[0])
                 time.sleep(1)
         except Exception as e:
@@ -174,7 +182,7 @@ try:
             elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "ddlTipoID")))
             selector_tipo_doc = Select(elemento_tipo_doc)
         except Exception as e:
-            print("❌ El formulario no cargó a tiempo o la página está saturada. Saltando registro...")
+            print("El formulario no cargó a tiempo o la página está saturada. Se salta este registro...")
             driver.switch_to.default_content()
             continue
         
@@ -201,11 +209,11 @@ try:
         if not respuesta_calculada:
             import winsound
             winsound.Beep(1000, 500)
-            respuesta_calculada = input("⚠️ ¡Pregunta desconocida! Escribe la respuesta aquí en la consola y presiona Enter: ")
+            respuesta_calculada = input("Pregunta desconocida. Escribe la respuesta aquí en la consola y presiona Enter: ")
 
         campo_respuesta = driver.find_element(By.ID, "txtRespuestaPregunta")
         campo_respuesta.send_keys(respuesta_calculada)
-        print(f"✅ Respuesta ingresada: {respuesta_calculada}")
+        print(f"Respuesta ingresada: {respuesta_calculada}")
 
         # ==========================================
         # 6. BUCLE DE VALIDACIÓN INTERACTIVA
@@ -225,7 +233,7 @@ try:
                 
                 for error in elementos_error:
                     if error.is_displayed() and error.text.strip() != "*" and error.text.strip() != "":
-                        print(f"⚠️ Alerta del portal detectada: {error.text.strip()}")
+                        print(f"Alerta del portal detectada: {error.text.strip()}")
                         errores_visibles = True
                         break
             except Exception:
@@ -234,7 +242,7 @@ try:
             if errores_visibles:
                 import winsound
                 winsound.Beep(1000, 500)
-                nueva_respuesta = input("⚠️ Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir persona): ")
+                nueva_respuesta = input("Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir persona): ")
                 
                 if nueva_respuesta.lower() == 'saltar':
                     break
@@ -247,7 +255,7 @@ try:
                 exito_generacion = True
         
         if not exito_generacion:
-            print("❌ No se pudo superar la validación. Saltando a la siguiente persona...")
+            print("No se pudo superar la validación. Se salta a la siguiente persona...")
             driver.switch_to.default_content()
             continue
 
@@ -268,28 +276,28 @@ try:
             
             try:
                 btn_descarga.click()
-                print("✅ Clic físico en el botón Descargar exitoso.")
+                print("Clic físico en el botón Descargar exitoso.")
             except Exception as e:
                 driver.execute_script("arguments[0].click();", btn_descarga)
-                print("✅ Clic forzado (JS) en el botón Descargar exitoso.")
-            
+                print("Clic forzado (vía JS) en el botón Descargar exitoso.")
+
             print("Esperando a que el archivo se guarde y renombrando...")
             if esperar_y_renombrar_descarga(carpeta_destino, nombre_archivo_esperado, timeout=30):
-                print(f"✅ ¡Documento guardado como '{nombre_archivo_esperado}'!")
+                print(f"Documento guardado como '{nombre_archivo_esperado}'.")
             else:
-                print("⚠️ Se agotó el tiempo de espera. El servidor de la Procuraduría no generó el archivo.")
-                
+                print("Se agotó el tiempo de espera. El servidor de la Procuraduría no generó el archivo.")
+
         except Exception as e:
-            print("⚠️ No se detectó el botón de descarga en la segunda pantalla. Revisando carpeta...")
+            print("No se detectó el botón de descarga en la segunda pantalla. Revisando carpeta...")
             if esperar_y_renombrar_descarga(carpeta_destino, nombre_archivo_esperado, timeout=10):
-                print(f"✅ ¡Documento guardado directamente como '{nombre_archivo_esperado}'!")
+                print(f"Documento guardado directamente como '{nombre_archivo_esperado}'.")
             else:
-                print("⚠️ No se pudo procesar la descarga de este documento.")
+                print("No se pudo procesar la descarga de este documento.")
 
         driver.switch_to.default_content() 
 
 except Exception as e:
-    print(f"\n❌ Ocurrió un error inesperado durante el ciclo general: {e}")
+    print(f"\nOcurrió un error inesperado durante el ciclo general: {e}")
 
 finally:
     print("\nCerrando navegador...")

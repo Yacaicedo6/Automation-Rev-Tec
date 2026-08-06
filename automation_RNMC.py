@@ -7,12 +7,19 @@ from selenium.webdriver.support.ui import Select
 import time
 import base64
 import os
+import sys
 
 # ==========================================
 # 1. CONFIGURACIÓN Y LECTURA DEL EXCEL
 # ==========================================
-# ⚠️ IMPORTANTE: Pon la ruta absoluta completa para que la carpeta se cree ahí mismo
-ruta_excel = r"E:\COMPUTADOR YAN\ALCALDIA DE CALI\2026\2026-2\ESTIMULOS\REV TEC ADMIN\REV TEC ADMIN MUNDIAL DE SALSA\ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+def obtener_ruta_excel():
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+
+ruta_excel = obtener_ruta_excel()
+if not os.path.isfile(ruta_excel):
+    raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
 
 # Crear carpeta para los PDF en el MISMO lugar donde está el Excel
 directorio_base = os.path.dirname(ruta_excel)
@@ -108,10 +115,10 @@ try:
             with open(ruta_guardado, "wb") as file:
                 file.write(base64.b64decode(pdf_data['data']))
                 
-            print(f"✅ ¡Éxito! PDF guardado")
-            
+            print("PDF guardado correctamente.")
+
         except Exception as e:
-            print(f"⚠️ Fallo en el resultado de {num_doc}. Guardando captura de pantalla del error...")
+            print(f"No se pudo procesar el resultado de {num_doc}. Se guarda una captura de pantalla del error...")
             # Tomar captura de pantalla de lo que sea que esté mostrando la página (errores, multas, etc.)
             nombre_error = f"ERROR_{nombre_completo}_{num_doc}.png"
             ruta_error = os.path.join(carpeta_destino, nombre_error)
@@ -120,7 +127,7 @@ try:
         time.sleep(1)
 
 except Exception as e:
-    print(f"\n❌ Ocurrió un error inesperado durante el ciclo: {e}")
+    print(f"\nOcurrió un error inesperado durante el ciclo: {e}")
 
 finally:
     print("\nCerrando navegador...")

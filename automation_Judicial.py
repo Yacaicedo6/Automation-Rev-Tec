@@ -6,6 +6,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 import time
 import os
+import sys
 import base64
 import shutil
 import PyPDF2
@@ -18,12 +19,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_KEY_2CAPTCHA = os.getenv("API_KEY_2CAPTCHA")
-# SiteKey extraído exitosamente del iframe
+# SiteKey extraído del iframe del portal
 SITE_KEY_POLICIA = "6LcsIwQaAAAAAFCsaI-dkR6hgKsZwwJRsmE0tIJH"
 
 if not API_KEY_2CAPTCHA:
     raise ValueError(
-        "❌ ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
+        "ERROR CRÍTICO: No se encontró la API_KEY_2CAPTCHA. "
         "Asegúrate de que el archivo .env existe y está configurado."
     )
 
@@ -60,14 +61,21 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
             
             except Exception as e:
-                print(f"⚠️ No se pudo auditar el archivo {archivo}: {e}")
+                print(f"No se pudo auditar el archivo {archivo}: {e}")
                 
     return alertas_encontradas
 
 # ==========================================
 # 2. RUTAS Y LECTURA DE DATOS
 # ==========================================
-ruta_excel = r"E:\COMPUTADOR YAN\ALCALDIA DE CALI\2026\2026-2\ESTIMULOS\REV TEC ADMIN\REV TEC ADMIN MUNDIAL DE SALSA\ESTIMULO 004\GRUP CONF\DIEGO FERNANDO MUÑOZ ALVAREZ\30007-6a6cb92535970-ANEXOTECNICO2.INFORMACIONARTISTASFESTIVALMUNDIALDESALSA2026SOCIA.xlsx"
+def obtener_ruta_excel():
+    if len(sys.argv) > 1:
+        return sys.argv[1]
+    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+
+ruta_excel = obtener_ruta_excel()
+if not os.path.isfile(ruta_excel):
+    raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
 
 directorio_base = os.path.dirname(ruta_excel)
 carpeta_destino = os.path.join(directorio_base, "Certificados_Policia")
@@ -78,10 +86,10 @@ os.makedirs(carpeta_destino, exist_ok=True)
 os.makedirs(carpeta_inhabilitados, exist_ok=True)
 
 # Ejecutar auditoría antes de iniciar la automatización
-print("🔍 Auditando certificados previamente descargados...")
+print("Auditando certificados previamente descargados...")
 alertas_historicas = auditar_descargas_anteriores(carpeta_destino, carpeta_inhabilitados)
 if alertas_historicas:
-    print(f"⚠️ Se movieron {len(alertas_historicas)} certificados sospechosos a la carpeta de INHABILITADOS.")
+    print(f"Se movieron {len(alertas_historicas)} certificados sospechosos a la carpeta de INHABILITADOS.")
 
 print("\nLeyendo el archivo Excel...")
 df = pd.read_excel(ruta_excel, sheet_name=0, header=28)
@@ -128,7 +136,7 @@ try:
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
         
         if os.path.exists(ruta_esperada_normal) or os.path.exists(ruta_esperada_inhab):
-            print(f"⏭️ El certificado ya existe en los registros. Omitiendo descarga...")
+            print("El certificado ya existe en los registros. Se omite la descarga...")
             continue
 
         # ==========================================
@@ -145,7 +153,7 @@ try:
             # Buscar el botón Enviar y hacer clic
             btn_enviar = driver.find_element(By.XPATH, "//span[text()='Enviar']/parent::button | //button[contains(., 'Enviar')]")
             driver.execute_script("arguments[0].click();", btn_enviar)
-            print("✅ Términos de uso aceptados.")
+            print("Términos de uso aceptados.")
             time.sleep(3) # Pausa para que cargue el formulario principal
         except:
             pass # Si no aparece el botón en 3 segundos, ya estamos en el formulario
@@ -179,10 +187,10 @@ try:
         
         while intentos < max_intentos and not captcha_resuelto:
             try:
-                print(f"⏳ Enviando reCAPTCHA a 2Captcha (Intento {intentos + 1}/{max_intentos})...")
+                print(f"Enviando reCAPTCHA a 2Captcha (intento {intentos + 1}/{max_intentos})...")
                 resultado = solver.recaptcha(sitekey=SITE_KEY_POLICIA, url=driver.current_url)
                 codigo_token = resultado['code']
-                print("✅ reCAPTCHA resuelto con éxito.")
+                print("reCAPTCHA resuelto correctamente.")
                 
                 driver.execute_script(f"document.getElementById('g-recaptcha-response').innerHTML = '{codigo_token}';")
                 # Obligar al JavaScript a registrar el cambio
@@ -193,12 +201,12 @@ try:
                 
             except Exception as e:
                 intentos += 1
-                print(f"⚠️ Error de red/conexión con la API: {e}")
+                print(f"Error de red o conexión con la API: {e}")
                 if intentos < max_intentos:
                     time.sleep(5)
 
         if not captcha_resuelto:
-            print(f"❌ Imposible resolver Captcha tras {max_intentos} intentos. Saltando persona...")
+            print(f"No fue posible resolver el captcha tras {max_intentos} intentos. Se salta a la siguiente persona...")
             continue
 
         # ==========================================
@@ -221,7 +229,7 @@ try:
                 for error in alertas:
                     texto_error = error.text.strip()
                     if error.is_displayed() and len(texto_error) > 2:
-                        print(f"⚠️ Alerta del portal detectada: {texto_error}")
+                        print(f"Alerta del portal detectada: {texto_error}")
                         errores_visibles = True
                         break
             except Exception:
@@ -230,7 +238,7 @@ try:
             if errores_visibles:
                 import winsound
                 winsound.Beep(1000, 500)
-                accion = input("⚠️ Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
+                accion = input("Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
                 
                 if accion.lower() == 'saltar':
                     break
@@ -239,7 +247,7 @@ try:
                 exito_generacion = True
         
         if not exito_generacion:
-            print("❌ No se pudo superar la validación. Saltando a la siguiente persona...")
+            print("No se pudo superar la validación. Se salta a la siguiente persona...")
             continue
 
         # ==========================================
@@ -254,10 +262,10 @@ try:
             
             if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
                 ruta_final_guardado = ruta_esperada_normal
-                print("✅ Resultados limpios. Guardando en carpeta estándar...")
+                print("Resultados limpios. Se guarda en la carpeta estándar...")
             else:
                 ruta_final_guardado = ruta_esperada_inhab
-                print("🚨 ¡ATENCIÓN! Se detectó un posible asunto pendiente. Guardando en carpeta de alertas...")
+                print("Atención: se detectó un posible asunto pendiente. Se guarda en la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
                 import winsound
                 winsound.Beep(2000, 1000)
@@ -272,26 +280,26 @@ try:
             with open(ruta_final_guardado, "wb") as f:
                 f.write(base64.b64decode(pdf_data['data']))
                 
-            print(f"✅ ¡Documento guardado silenciosamente!")
-                
+            print("Documento guardado correctamente.")
+
         except Exception as e:
-            print(f"⚠️ Error inesperado al analizar/generar el PDF: {e}")
+            print(f"Error inesperado al analizar o generar el PDF: {e}")
 
 except Exception as e:
-    print(f"\n❌ Ocurrió un error inesperado durante el ciclo general: {e}")
+    print(f"\nOcurrió un error inesperado durante el ciclo general: {e}")
 
 finally:
     print("\n" + "="*50)
-    print("🚦 RESUMEN DE EJECUCIÓN Y ALERTAS 🚦")
+    print("RESUMEN DE EJECUCIÓN Y ALERTAS")
     print("="*50)
-    
+
     if lista_alertas_finales:
-        print(f"⚠️ SE DETECTARON {len(lista_alertas_finales)} REGISTROS CON ASUNTOS PENDIENTES:")
+        print(f"Se detectaron {len(lista_alertas_finales)} registros con asuntos pendientes:")
         for alerta in lista_alertas_finales:
             print(f"   - {alerta}")
         print(f"\nRevisa manualmente los documentos en la carpeta:\n{carpeta_inhabilitados}")
     else:
-        print("✅ Todo excelente. No se encontraron registros con asuntos pendientes en esta tanda.")
+        print("No se encontraron registros con asuntos pendientes en esta tanda.")
         
     print("="*50)
     print("Cerrando navegador...")
