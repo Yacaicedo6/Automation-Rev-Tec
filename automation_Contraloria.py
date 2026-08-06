@@ -100,6 +100,34 @@ def esperar_descarga(carpeta_destino, timeout=20):
 
     return None
 
+def leer_personas(ruta_excel):
+    """
+    Lee todas las hojas del libro y combina las filas con un documento de
+    identidad válido. Algunas plantillas separan a las personas en varias
+    hojas (por ejemplo BAILARINES / MUSICOS), así que no basta con leer
+    solo la primera.
+    """
+    libro = pd.ExcelFile(ruta_excel)
+    hojas_validas = []
+
+    for nombre_hoja in libro.sheet_names:
+        try:
+            df_hoja = pd.read_excel(ruta_excel, sheet_name=nombre_hoja, header=28)
+            df_hoja.columns = df_hoja.columns.str.strip()
+            if '# DOC. IDENTIDAD' not in df_hoja.columns:
+                continue
+            df_hoja = df_hoja.dropna(subset=['# DOC. IDENTIDAD'])
+            if not df_hoja.empty:
+                hojas_validas.append(df_hoja)
+        except Exception:
+            continue
+
+    if not hojas_validas:
+        return pd.DataFrame()
+
+    combinado = pd.concat(hojas_validas, ignore_index=True)
+    return combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'])
+
 # ==========================================
 # 2. CONFIGURACIÓN Y RUTAS
 # ==========================================
@@ -126,9 +154,9 @@ if alertas_historicas:
 print(f"Los PDF se guardarán automáticamente en:\n{carpeta_destino}")
 
 print("\nLeyendo el archivo Excel...")
-df = pd.read_excel(ruta_excel, sheet_name=0, header=28)
-df.columns = df.columns.str.strip()
-df = df.dropna(subset=['# DOC. IDENTIDAD'])
+df = leer_personas(ruta_excel)
+if df.empty:
+    print("No se encontró ninguna persona con documento válido en ninguna hoja del Excel.")
 
 lista_alertas_finales = alertas_historicas.copy()
 

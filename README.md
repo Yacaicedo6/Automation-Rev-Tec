@@ -38,14 +38,14 @@ API_KEY_2CAPTCHA=tu_clave_aqui
 
 ## El Excel de entrada
 
-Los scripts leen la hoja 1 del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), con los encabezados en la fila 29. Deben existir estas columnas:
+Los scripts leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`), y una persona puede aparecer en más de una si tiene varios roles (se deduplica por número de documento). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
 
 - `# DOC. IDENTIDAD`
 - `TIPO DOCUMENTO \n(RC - TI - PP)`
 - `PRIMER NOMBRE`, `SEGUNDO NOMBRE`, `PRIMER APELLIDO`, `SEGUNDO APELLIDO`
 - `FECHA DE EXPEDICION (DD/MM/AA)`
 
-Las filas que no empiezan con un número de documento (encabezados, subtítulos) se ignoran automáticamente.
+Las hojas que no tengan esa estructura en la fila 29 se ignoran sin interrumpir la lectura de las demás. Las filas que no empiezan con un número de documento (encabezados repetidos, subtítulos, filas de plantilla sin diligenciar) se ignoran automáticamente.
 
 ## Uso
 
