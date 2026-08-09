@@ -393,6 +393,18 @@ try:
             ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
 
             if not ruta_descargada:
+                # Puede ser lentitud puntual (red, arranque del navegador) y no un
+                # rechazo real del portal, así que se reintenta una vez antes de
+                # darlo por fallido.
+                print("No llegó el archivo en el primer intento. Reintentando una vez más...")
+                try:
+                    btn_buscar = driver.find_element(By.ID, "btnBuscar")
+                    driver.execute_script("arguments[0].click();", btn_buscar)
+                    ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
+                except Exception:
+                    ruta_descargada = None
+
+            if not ruta_descargada:
                 print("Se agotó el tiempo de espera. El portal de la Contraloría no generó el archivo.")
                 errores_no_manejados += 1
                 fallos_consecutivos += 1

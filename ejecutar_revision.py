@@ -10,9 +10,17 @@ misma ruta.
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 DIRECTORIO_SCRIPTS = Path(__file__).resolve().parent
+
+# Pausa entre una verificación y la siguiente, para que Chrome/chromedriver
+# terminen de liberar recursos antes de abrir el próximo navegador. Sin esta
+# pausa, el primer intento del siguiente script puede fallar por lentitud
+# (el portal parece no responder) justo cuando en realidad es el sistema
+# arrancando un Chrome nuevo con el anterior recién cerrado.
+PAUSA_ENTRE_VERIFICACIONES = 8
 
 VERIFICACIONES = [
     ("RNMC - Policía (Medidas Correctivas)", "automation_RNMC.py"),
@@ -65,7 +73,11 @@ def main():
         return
 
     resultados = []
-    for nombre, archivo in VERIFICACIONES:
+    for indice, (nombre, archivo) in enumerate(VERIFICACIONES):
+        if indice > 0:
+            print(f"\nEsperando {PAUSA_ENTRE_VERIFICACIONES}s antes de abrir el siguiente navegador...")
+            time.sleep(PAUSA_ENTRE_VERIFICACIONES)
+
         ruta_script = DIRECTORIO_SCRIPTS / archivo
 
         print("\n" + "=" * 60)
