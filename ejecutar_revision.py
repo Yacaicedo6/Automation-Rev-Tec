@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 
 DIRECTORIO_SCRIPTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
+from notificar import enviar_notificacion
 
 # Pausa entre una verificación y la siguiente, para que Chrome/chromedriver
 # terminen de liberar recursos antes de abrir el próximo navegador. Sin esta
@@ -104,13 +106,23 @@ def mostrar_resumen(resultados):
     print("\n" + "=" * 60)
     print("Resumen de ejecución")
     print("=" * 60)
+
+    lineas = []
     for nombre, ok in resultados:
         estado = "completado" if ok else "terminó con errores"
-        print(f"  [{estado}] {nombre}")
+        linea = f"  [{estado}] {nombre}"
+        print(linea)
+        lineas.append(linea)
 
     pendientes = [nombre for nombre, _ in VERIFICACIONES if nombre not in [n for n, _ in resultados]]
     for nombre in pendientes:
-        print(f"  [no ejecutado] {nombre}")
+        linea = f"  [no ejecutado] {nombre}"
+        print(linea)
+        lineas.append(linea)
+
+    todo_ok = all(ok for _, ok in resultados) and not pendientes
+    asunto = "Revisión técnico-administrativa: completada" if todo_ok else "Revisión técnico-administrativa: terminó con pendientes"
+    enviar_notificacion(asunto, "\n".join(lineas))
 
 
 if __name__ == "__main__":
