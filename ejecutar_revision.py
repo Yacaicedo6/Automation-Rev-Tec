@@ -1,9 +1,11 @@
 """
 Trigger de la revisión técnico-administrativa.
 
-Pide una sola vez la ruta del Excel con la información de los postulantes
-(el "ANEXO TECNICO... INFORMACION ARTISTAS...") y ejecuta, en orden, cada uno
-de los scripts de verificación de antecedentes, pasándoles esa misma ruta.
+Pide una sola vez la ruta del archivo con la información de los postulantes
+(el Excel "ANEXO TECNICO... INFORMACION ARTISTAS..." o, en convocatorias que
+ya no traen Excel, el PDF de "Autorización para consulta de antecedentes") y
+ejecuta, en orden, cada uno de los scripts de verificación, pasándoles esa
+misma ruta.
 """
 import os
 import subprocess
@@ -21,7 +23,7 @@ VERIFICACIONES = [
 ]
 
 
-def pedir_ruta_excel():
+def pedir_ruta_datos():
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -29,8 +31,12 @@ def pedir_ruta_excel():
         raiz = tk.Tk()
         raiz.withdraw()
         ruta = filedialog.askopenfilename(
-            title="Selecciona el Excel con la información de los postulantes",
-            filetypes=[("Archivos Excel", "*.xlsx")],
+            title="Selecciona el Excel o el PDF con la información de los postulantes",
+            filetypes=[
+                ("Excel o PDF", "*.xlsx *.pdf"),
+                ("Archivos Excel", "*.xlsx"),
+                ("Archivos PDF", "*.pdf"),
+            ],
         )
         raiz.destroy()
         if ruta:
@@ -38,17 +44,17 @@ def pedir_ruta_excel():
     except Exception:
         pass
 
-    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+    return input("Ruta del archivo (Excel o PDF) con la información de los postulantes: ").strip('"').strip()
 
 
 def main():
-    ruta_excel = pedir_ruta_excel()
+    ruta_datos = pedir_ruta_datos()
 
-    if not ruta_excel or not os.path.isfile(ruta_excel):
-        print(f"No se encontró el archivo: {ruta_excel}")
+    if not ruta_datos or not os.path.isfile(ruta_datos):
+        print(f"No se encontró el archivo: {ruta_datos}")
         sys.exit(1)
 
-    print(f"\nArchivo seleccionado:\n{ruta_excel}\n")
+    print(f"\nArchivo seleccionado:\n{ruta_datos}\n")
     print("Se ejecutarán las siguientes verificaciones, en orden:")
     for nombre, _ in VERIFICACIONES:
         print(f"  - {nombre}")
@@ -66,7 +72,7 @@ def main():
         print(f"Iniciando: {nombre}")
         print("=" * 60)
 
-        proceso = subprocess.run([sys.executable, str(ruta_script), ruta_excel])
+        proceso = subprocess.run([sys.executable, str(ruta_script), ruta_datos])
         exito = proceso.returncode == 0
         resultados.append((nombre, exito))
 
