@@ -9,7 +9,10 @@ vuelva a leer los PDFs por su cuenta.
 """
 import os
 import re
+import shutil
 import sys
+from datetime import datetime
+
 import pandas as pd
 import PyPDF2
 
@@ -197,6 +200,13 @@ def main():
 
     directorio_base = os.path.dirname(ruta_autorizacion)
     ruta_salida = os.path.join(directorio_base, "personas_preparadas.csv")
+
+    if os.path.isfile(ruta_salida):
+        marca_tiempo = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ruta_respaldo = os.path.join(directorio_base, f"personas_preparadas.bak_{marca_tiempo}.csv")
+        shutil.copy2(ruta_salida, ruta_respaldo)
+        print(f"\nYa existía un {os.path.basename(ruta_salida)}: se guardó una copia en {os.path.basename(ruta_respaldo)} antes de reemplazarlo.")
+
     df_final.to_csv(ruta_salida, index=False, encoding="utf-8-sig")
 
     total_revisar = int((df_final["REVISAR"] == "SI").sum())
