@@ -39,11 +39,12 @@ def pedir_ruta_datos():
         raiz = tk.Tk()
         raiz.withdraw()
         ruta = filedialog.askopenfilename(
-            title="Selecciona el Excel o el PDF con la información de los postulantes",
+            title="Selecciona el Excel, el PDF o el CSV con la información de los postulantes",
             filetypes=[
-                ("Excel o PDF", "*.xlsx *.pdf"),
+                ("Excel, PDF o CSV", "*.xlsx *.pdf *.csv"),
                 ("Archivos Excel", "*.xlsx"),
                 ("Archivos PDF", "*.pdf"),
+                ("Archivos CSV", "*.csv"),
             ],
         )
         raiz.destroy()
@@ -52,7 +53,7 @@ def pedir_ruta_datos():
     except Exception:
         pass
 
-    return input("Ruta del archivo (Excel o PDF) con la información de los postulantes: ").strip('"').strip()
+    return input("Ruta del archivo (Excel, PDF o CSV ya preparado) con la información de los postulantes: ").strip('"').strip()
 
 
 def main():

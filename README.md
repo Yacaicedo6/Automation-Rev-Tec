@@ -40,7 +40,7 @@ API_KEY_2CAPTCHA=tu_clave_aqui
 
 ## El archivo de entrada
 
-Los scripts aceptan dos formatos de origen, y detectan cuál es por la extensión del archivo:
+Los scripts aceptan tres formatos de origen, y detectan cuál es por la extensión del archivo:
 
 ### Excel (`.xlsx`)
 
@@ -67,6 +67,21 @@ De ahí se extrae automáticamente: número de documento, tipo (cédula de ciuda
 
 Este modo no requiere una fila de encabezados ni una estructura tabular — solo que el texto del PDF sea seleccionable (no un escaneo/imagen).
 
+### CSV ya preparado (`.csv`)
+
+Cuando el PDF de autorización tiene errores de digitación (el caso más común: la fecha de expedición no coincide con la de la cédula real de la persona), leerlo directamente produce rechazos en los portales. Para esos casos existe `preparar_personas.py`, un script aparte que concilia dos fuentes antes de consultar nada:
+
+```bash
+python preparar_personas.py "C:\ruta\al\AUT_CONS_ANTEC.pdf" "C:\ruta\al\CC_GRUPO.pdf"
+```
+
+- El primer PDF es el de autorizaciones (igual al del modo anterior).
+- El segundo (opcional) es un PDF con las copias de las cédulas de las mismas personas (frente y reverso, todas en un solo archivo). Si no se pasa, o si una página está escaneada como imagen sin texto seleccionable, esa persona simplemente no se puede verificar automáticamente y queda marcada para revisión manual.
+
+El script compara la fecha de expedición de cada persona entre ambas fuentes. Si coinciden, no hay nada que hacer. Si difieren (o la cédula no se pudo leer), se prioriza el dato de la cédula por ser la fuente más confiable, y la fila queda marcada con `REVISAR=SI` y una `MOTIVO_REVISAR` explicando por qué, para que puedas confirmarla a mano antes de correr las consultas.
+
+El resultado se guarda como `personas_preparadas.csv` junto al PDF de autorización, y es el archivo que le pasas después a `ejecutar_revision.py` o a cualquiera de los 5 scripts — así todos consultan exactamente los mismos datos ya revisados, en vez de que cada uno vuelva a leer y a interpretar el PDF por su cuenta.
+
 ## Uso
 
 ### Opción recomendada: ejecutar todo con un solo trigger
@@ -75,13 +90,14 @@ Este modo no requiere una fila de encabezados ni una estructura tabular — solo
 python ejecutar_revision.py
 ```
 
-Te va a pedir el archivo (Excel o PDF, con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Si una verificación termina con errores, se detiene y te pregunta si quieres seguir con la siguiente o parar ahí para revisar. Al final imprime un resumen de cuáles terminaron bien, cuáles con error y cuáles no llegaron a ejecutarse.
+Te va a pedir el archivo (Excel, PDF o el CSV ya preparado por `preparar_personas.py`, con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Si una verificación termina con errores, se detiene y te pregunta si quieres seguir con la siguiente o parar ahí para revisar. Al final imprime un resumen de cuáles terminaron bien, cuáles con error y cuáles no llegaron a ejecutarse.
 
 ### Ejecutar un script individual
 
 ```bash
 python automation_Judicial.py "C:\ruta\al\ANEXOTECNICO.xlsx"
 python automation_Judicial.py "C:\ruta\al\AUT_CONS_ANTEC.pdf"
+python automation_Judicial.py "C:\ruta\al\personas_preparadas.csv"
 ```
 
 Si no le pasas la ruta como argumento, te la pregunta por consola.
@@ -104,13 +120,13 @@ Algunos portales piden validaciones adicionales que los scripts no pueden resolv
 
 ## Privacidad y seguridad
 
-Este repositorio solo versiona código. Las carpetas de certificados se crean junto al Excel que uses como fuente (fuera de esta carpeta de repositorio), así que los datos personales de los postulantes nunca quedan dentro del árbol de git. Como respaldo adicional, `.gitignore` también excluye por si acaso:
+Este repositorio solo versiona código. Las carpetas de certificados y el `personas_preparadas.csv` se crean junto al archivo que uses como fuente (fuera de esta carpeta de repositorio), así que los datos personales de los postulantes nunca quedan dentro del árbol de git. Como respaldo adicional, `.gitignore` también excluye por si acaso:
 
 - `.env` (clave de 2Captcha)
 - `Cert_CONT/`, `Cert_RNMC/`, `Cert_PROC/`, `Cert_JUD/`, `Cert_DSEX/` (y las carpetas `Certificados_*` del formato anterior)
 - `*.xlsx`, `*.csv`
 
-No subas manualmente Excels, PDFs de certificados ni el `.env` a este repositorio.
+No subas manualmente Excels, PDFs de certificados, el `personas_preparadas.csv` ni el `.env` a este repositorio. Tampoco menciones nombres o números de documento reales en mensajes de commit.
 
 ## Próximos pasos
 
