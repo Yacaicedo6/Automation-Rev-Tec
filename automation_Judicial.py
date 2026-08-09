@@ -9,9 +9,20 @@ import os
 import sys
 import base64
 import shutil
+import re
 import PyPDF2
 from twocaptcha import TwoCaptcha
 from dotenv import load_dotenv
+
+# Patrón de la frase de autorización que trae cada persona en el PDF de
+# "Autorización para consulta de antecedentes" (usado cuando no hay Excel).
+PATRON_AUTORIZACION_PDF = re.compile(
+    r"El \(la\) suscrito\(a\)\s+(?P<nombre>.+?)\s*,\s+identificado\(a\) con\s+"
+    r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
+    r"(?P<doc>[\d.]+)\s*,\s+expedida en\s+.+?\s*,\s+con fecha de expedici[oó]n\s+"
+    r"(?P<fecha>\d{1,2}/\d{1,2}/\d{4})",
+    re.IGNORECASE,
+)
 
 # ==========================================
 # 0. CONFIGURACIÓN SEGURA
@@ -120,19 +131,64 @@ def leer_personas(ruta_excel):
     combinado = combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'], keep='first')
     return combinado.drop(columns=['_completitud'])
 
+def leer_personas_desde_pdf(ruta_pdf):
+    """
+    Extrae a las personas directamente del PDF de "Autorización para consulta
+    de antecedentes" (una autorización por persona, dentro del mismo archivo),
+    para las convocatorias que ya no traen un Excel de postulantes.
+    """
+    with open(ruta_pdf, 'rb') as f:
+        lector = PyPDF2.PdfReader(f)
+        texto_completo = ""
+        for pagina in lector.pages:
+            texto_completo += (pagina.extract_text() or "") + " "
+
+    texto_normalizado = " ".join(texto_completo.split())
+
+    filas = []
+    for coincidencia in PATRON_AUTORIZACION_PDF.finditer(texto_normalizado):
+        nombre_completo = " ".join(coincidencia.group("nombre").split())
+        tokens = nombre_completo.split()
+        primer_nombre = tokens[0] if tokens else ""
+        resto_nombre = " ".join(tokens[1:])
+
+        tipo_doc_texto = coincidencia.group("tipo_doc").lower()
+        if "extranjer" in tipo_doc_texto:
+            tipo_doc = "CE"
+        elif "tarjeta" in tipo_doc_texto:
+            tipo_doc = "TI"
+        elif "pasaporte" in tipo_doc_texto:
+            tipo_doc = "PA"
+        else:
+            tipo_doc = "CC"
+
+        filas.append({
+            '# DOC. IDENTIDAD': re.sub(r"\D", "", coincidencia.group("doc")),
+            'TIPO DOCUMENTO \n(RC - TI - PP)': tipo_doc,
+            'PRIMER NOMBRE': primer_nombre,
+            'SEGUNDO NOMBRE': "",
+            'PRIMER APELLIDO': resto_nombre,
+            'SEGUNDO APELLIDO': "",
+            # dayfirst=True porque el PDF trae las fechas en formato DD/MM/AAAA
+            'FECHA DE EXPEDICION (DD/MM/AA)': pd.to_datetime(coincidencia.group("fecha"), dayfirst=True),
+        })
+
+    df = pd.DataFrame(filas)
+    return df.drop_duplicates(subset=['# DOC. IDENTIDAD']) if not df.empty else df
+
 # ==========================================
 # 2. RUTAS Y LECTURA DE DATOS
 # ==========================================
-def obtener_ruta_excel():
+def obtener_ruta_datos():
     if len(sys.argv) > 1:
         return sys.argv[1]
-    return input("Ruta del archivo Excel con la información de los postulantes: ").strip('"').strip()
+    return input("Ruta del archivo (Excel o PDF) con la información de los postulantes: ").strip('"').strip()
 
-ruta_excel = obtener_ruta_excel()
-if not os.path.isfile(ruta_excel):
-    raise FileNotFoundError(f"No se encontró el archivo: {ruta_excel}")
+ruta_datos = obtener_ruta_datos()
+if not os.path.isfile(ruta_datos):
+    raise FileNotFoundError(f"No se encontró el archivo: {ruta_datos}")
 
-directorio_base = os.path.dirname(ruta_excel)
+directorio_base = os.path.dirname(ruta_datos)
 carpeta_destino = os.path.join(directorio_base, "Cert_JUD")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_JUD_INHABILITADOS")
 
@@ -152,10 +208,13 @@ alertas_historicas = auditar_descargas_anteriores(carpeta_destino, carpeta_inhab
 if alertas_historicas:
     print(f"Se movieron {len(alertas_historicas)} certificados sospechosos a la carpeta de INHABILITADOS.")
 
-print("\nLeyendo el archivo Excel...")
-df = leer_personas(ruta_excel)
+print("\nLeyendo el archivo de postulantes...")
+if ruta_datos.lower().endswith('.pdf'):
+    df = leer_personas_desde_pdf(ruta_datos)
+else:
+    df = leer_personas(ruta_datos)
 if df.empty:
-    print("No se encontró ninguna persona con documento válido en ninguna hoja del Excel.")
+    print("No se encontró ninguna persona con documento válido en el archivo.")
 
 lista_alertas_finales = alertas_historicas.copy()
 

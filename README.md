@@ -2,7 +2,7 @@
 
 Automatiza la descarga de certificados de antecedentes para la revisión técnico-administrativa de convocatorias de estímulos de la Alcaldía de Cali (actualmente en uso para el Ecosistema Musical y Dancístico del Festival Mundial de Salsa 2026).
 
-Por cada persona listada en el Excel de un postulante (grupo conformado o representante de persona jurídica), el proyecto consulta 5 portales públicos y descarga el certificado correspondiente, clasificando automáticamente los casos que requieren revisión manual.
+Por cada persona listada en el archivo de un postulante (el Excel de anexo técnico, o el PDF de autorización de consulta de antecedentes en convocatorias que ya no usan Excel), el proyecto consulta 5 portales públicos y descarga el certificado correspondiente, clasificando automáticamente los casos que requieren revisión manual.
 
 ## Verificaciones que realiza
 
@@ -38,9 +38,13 @@ Crea un archivo `.env` en esta carpeta (no se sube a git) con tu clave de 2Captc
 API_KEY_2CAPTCHA=tu_clave_aqui
 ```
 
-## El Excel de entrada
+## El archivo de entrada
 
-Los scripts leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
+Los scripts aceptan dos formatos de origen, y detectan cuál es por la extensión del archivo:
+
+### Excel (`.xlsx`)
+
+Leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
 
 - `# DOC. IDENTIDAD`
 - `TIPO DOCUMENTO \n(RC - TI - PP)`
@@ -51,6 +55,18 @@ Las hojas que no tengan esa estructura en la fila 29 se ignoran sin interrumpir 
 
 Si una persona aparece más de una vez (por ejemplo, con varios roles en distintas secciones de una misma hoja), se conserva la fila más completa — la que tenga menos celdas vacías — no la primera que aparezca.
 
+### PDF de autorización (`.pdf`)
+
+Para convocatorias que ya no traen Excel (por ejemplo VENTANILLA ABIERTA), los scripts pueden leer directamente el PDF de "Autorización para consulta de antecedentes, registros e inhabilidades" — el mismo documento firmado por cada postulante, con una autorización por persona dentro del mismo archivo.
+
+Cada autorización trae, en la misma frase, todo lo necesario:
+
+> "El (la) suscrito(a) **{nombre completo}**, identificado(a) con **{tipo de documento}** No. **{número}**, expedida en {ciudad}, con fecha de expedición **{fecha}**, actuando en nombre propio..."
+
+De ahí se extrae automáticamente: número de documento, tipo (cédula de ciudadanía → `CC`, tarjeta de identidad → `TI`, cédula de extranjería → `CE`, pasaporte → `PA`) y fecha de expedición. Como el PDF no separa "primer nombre / segundo nombre / apellidos", se toma la primera palabra del nombre completo como primer nombre (la única parte que el resto del código necesita) y el resto se conserva tal cual para el nombre completo.
+
+Este modo no requiere una fila de encabezados ni una estructura tabular — solo que el texto del PDF sea seleccionable (no un escaneo/imagen).
+
 ## Uso
 
 ### Opción recomendada: ejecutar todo con un solo trigger
@@ -59,12 +75,13 @@ Si una persona aparece más de una vez (por ejemplo, con varios roles en distint
 python ejecutar_revision.py
 ```
 
-Te va a pedir el Excel (con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Si una verificación termina con errores, se detiene y te pregunta si quieres seguir con la siguiente o parar ahí para revisar. Al final imprime un resumen de cuáles terminaron bien, cuáles con error y cuáles no llegaron a ejecutarse.
+Te va a pedir el archivo (Excel o PDF, con un selector de archivos o por consola), te muestra qué verificaciones va a correr, pide confirmación y ejecuta las 5 en orden, cada una con su propia ventana de Chrome. Si una verificación termina con errores, se detiene y te pregunta si quieres seguir con la siguiente o parar ahí para revisar. Al final imprime un resumen de cuáles terminaron bien, cuáles con error y cuáles no llegaron a ejecutarse.
 
 ### Ejecutar un script individual
 
 ```bash
 python automation_Judicial.py "C:\ruta\al\ANEXOTECNICO.xlsx"
+python automation_Judicial.py "C:\ruta\al\AUT_CONS_ANTEC.pdf"
 ```
 
 Si no le pasas la ruta como argumento, te la pregunta por consola.
