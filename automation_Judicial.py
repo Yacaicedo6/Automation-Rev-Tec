@@ -176,13 +176,31 @@ def leer_personas_desde_pdf(ruta_pdf):
     df = pd.DataFrame(filas)
     return df.drop_duplicates(subset=['# DOC. IDENTIDAD']) if not df.empty else df
 
+def leer_personas_desde_csv(ruta_csv):
+    """
+    Lee el CSV que genera preparar_personas.py (columnas DOC, TIPO_DOC,
+    PRIMER_NOMBRE, SEGUNDO_NOMBRE, PRIMER_APELLIDO, SEGUNDO_APELLIDO,
+    FECHA_EXPEDICION) y lo traduce a los nombres de columna que usa el resto
+    del script.
+    """
+    df = pd.read_csv(ruta_csv, dtype={'DOC': str})
+    return pd.DataFrame({
+        '# DOC. IDENTIDAD': df['DOC'],
+        'TIPO DOCUMENTO \n(RC - TI - PP)': df['TIPO_DOC'],
+        'PRIMER NOMBRE': df['PRIMER_NOMBRE'],
+        'SEGUNDO NOMBRE': df.get('SEGUNDO_NOMBRE', ""),
+        'PRIMER APELLIDO': df['PRIMER_APELLIDO'],
+        'SEGUNDO APELLIDO': df.get('SEGUNDO_APELLIDO', ""),
+        'FECHA DE EXPEDICION (DD/MM/AA)': pd.to_datetime(df['FECHA_EXPEDICION'], dayfirst=True),
+    })
+
 # ==========================================
 # 2. RUTAS Y LECTURA DE DATOS
 # ==========================================
 def obtener_ruta_datos():
     if len(sys.argv) > 1:
         return sys.argv[1]
-    return input("Ruta del archivo (Excel o PDF) con la información de los postulantes: ").strip('"').strip()
+    return input("Ruta del archivo (Excel, PDF o CSV ya preparado) con la información de los postulantes: ").strip('"').strip()
 
 ruta_datos = obtener_ruta_datos()
 if not os.path.isfile(ruta_datos):
@@ -209,7 +227,9 @@ if alertas_historicas:
     print(f"Se movieron {len(alertas_historicas)} certificados sospechosos a la carpeta de INHABILITADOS.")
 
 print("\nLeyendo el archivo de postulantes...")
-if ruta_datos.lower().endswith('.pdf'):
+if ruta_datos.lower().endswith('.csv'):
+    df = leer_personas_desde_csv(ruta_datos)
+elif ruta_datos.lower().endswith('.pdf'):
     df = leer_personas_desde_pdf(ruta_datos)
 else:
     df = leer_personas(ruta_datos)
