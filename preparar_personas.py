@@ -32,15 +32,15 @@ except Exception:
 _LECTOR_OCR = None
 
 PATRON_AUTORIZACION_PDF = re.compile(
-    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,\s+"
+    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,?\s+"
     r"identificad[oa]\s*(?:\(\s*a\s*\))?\s+con\s+"
     r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
-    r"(?P<doc>[\d.]+)\s*,\s+expedida en\s+.+?\s*,\s+con fecha de expedici[oó]n\s+"
+    r"(?P<doc>[\d.]+)\s*,?\s+expedida en\s+.+?\s*,?\s+con fecha de expedici[oó]n\s+"
     r"(?P<fecha>\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})",
     re.IGNORECASE,
 )
 
-PATRON_FECHA_MES_TEXTO = re.compile(r'(\d{1,2})-([A-Z]{3})-(\d{4})', re.IGNORECASE)
+PATRON_FECHA_MES_TEXTO = re.compile(r'(\d{1,2})[\s-]+([A-Z]{3})[\s-]+(\d{4})', re.IGNORECASE)
 MESES = {'ENE': 1, 'FEB': 2, 'MAR': 3, 'ABR': 4, 'MAY': 5, 'JUN': 6,
          'JUL': 7, 'AGO': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DIC': 12}
 
@@ -170,18 +170,34 @@ def leer_fechas_desde_cedulas(ruta_pdf, documentos_conocidos):
         numero_en_pagina = next((n for n in numeros_en_pagina if n in documentos_conocidos), None)
 
         fecha_en_pagina = None
+        fecha_candidata = None
+        fecha_con_ciudad = None
         for m_fecha in PATRON_FECHA_MES_TEXTO.finditer(texto):
             inicio, fin = m_fecha.span()
             antes = texto[max(0, inicio - 25):inicio].upper()
             contexto = texto[max(0, inicio - 40):fin + 40].upper()
             if "NACIMIENTO" in antes:
                 continue
+            dia, mes_txt, anio = m_fecha.groups()
+            mes = MESES.get(mes_txt.upper())
+            if not mes:
+                continue
+            fecha_formateada = f"{int(dia):02d}/{mes:02d}/{anio}"
+            # Se recuerda como candidata por si el OCR no logra leer bien la
+            # etiqueta "EXPEDICIÓN" (le pasa con las cédulas del formato
+            # nuevo, que además suelen traer una tercera fecha de
+            # vencimiento). "22 FEB 2017, CALI" (con coma y ciudad después)
+            # es un patrón típico de fecha de expedición, así que se
+            # prefiere sobre solo tomar la última fecha encontrada.
+            fecha_candidata = fecha_formateada
+            if texto[fin:fin + 3].lstrip().startswith(","):
+                fecha_con_ciudad = fecha_formateada
             if "EXPEDICI" in contexto:
-                dia, mes_txt, anio = m_fecha.groups()
-                mes = MESES.get(mes_txt.upper())
-                if mes:
-                    fecha_en_pagina = f"{int(dia):02d}/{mes:02d}/{anio}"
-                    break
+                fecha_en_pagina = fecha_formateada
+                break
+
+        if fecha_en_pagina is None:
+            fecha_en_pagina = fecha_con_ciudad or fecha_candidata
 
         # El número y la fecha de expedición suelen quedar en páginas
         # distintas (frente y reverso de la cédula), así que se recuerda
