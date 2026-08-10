@@ -23,6 +23,7 @@ Las carpetas de salida se crean junto al Excel que se use como fuente de datos, 
 - Python 3.11+
 - Google Chrome instalado
 - Una cuenta de [2Captcha](https://2captcha.com/) con saldo (se usa para resolver los reCAPTCHA de Contraloría, Judicial y Delitos Sexuales)
+- `preparar_personas.py` usa [EasyOCR](https://github.com/JaidedAI/EasyOCR) para leer cédulas escaneadas; la primera vez que lo necesita descarga sus modelos (~100 MB). En este equipo se configuró para guardarlos en `D:\ModelosIA\EasyOCR` en vez de en `C:` (ver variable `EASYOCR_MODULE_PATH` más abajo), por el espacio limitado del disco del sistema.
 
 ## Instalación
 
@@ -37,6 +38,15 @@ Crea un archivo `.env` en esta carpeta (no se sube a git) con tu clave de 2Captc
 ```
 API_KEY_2CAPTCHA=tu_clave_aqui
 ```
+
+Si el disco `C:` tiene poco espacio, se puede redirigir dónde EasyOCR guarda sus modelos (y dónde pip guarda su caché de descargas) a otra unidad con más espacio, con variables de entorno de usuario persistentes (PowerShell, una sola vez):
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("EASYOCR_MODULE_PATH", "D:\ModelosIA\EasyOCR", "User")
+[System.Environment]::SetEnvironmentVariable("PIP_CACHE_DIR", "D:\pip-cache", "User")
+```
+
+`preparar_personas.py` también configura esta variable automáticamente al arrancar si detecta que existe la unidad `D:` y la variable no está ya definida, así que este paso es opcional — solo hace falta si quieres fijarlo de forma permanente o usar otra ruta.
 
 ## El archivo de entrada
 
@@ -76,9 +86,11 @@ python preparar_personas.py "C:\ruta\al\AUT_CONS_ANTEC.pdf" "C:\ruta\al\CC_GRUPO
 ```
 
 - El primer PDF es el de autorizaciones (igual al del modo anterior).
-- El segundo (opcional) es un PDF con las copias de las cédulas de las mismas personas (frente y reverso, todas en un solo archivo). Si no se pasa, o si una página está escaneada como imagen sin texto seleccionable, esa persona simplemente no se puede verificar automáticamente y queda marcada para revisión manual.
+- El segundo (opcional) es un PDF con las copias de las cédulas de las mismas personas (frente y reverso, todas en un solo archivo).
 
-El script compara la fecha de expedición de cada persona entre ambas fuentes. Si coinciden, no hay nada que hacer. Si difieren (o la cédula no se pudo leer), se prioriza el dato de la cédula por ser la fuente más confiable, y la fila queda marcada con `REVISAR=SI` y una `MOTIVO_REVISAR` explicando por qué, para que puedas confirmarla a mano antes de correr las consultas.
+Si una página del PDF de cédulas trae texto seleccionable, se lee directamente. Si es solo una foto o un escaneo (el caso más común), se le aplica OCR automáticamente con [EasyOCR](https://github.com/JaidedAI/EasyOCR) — que sí logra leer el texto por encima del patrón de seguridad de la cédula, algo que un OCR clásico (como Tesseract) no consigue. Para decidir a qué persona pertenece cada página, no se depende de que el OCR lea bien la etiqueta "NÚMERO": se compara cualquier número que aparezca en el texto contra los números de documento ya conocidos del PDF de autorización, lo que lo hace tolerante a errores de lectura en el resto del texto.
+
+El script compara la fecha de expedición de cada persona entre ambas fuentes (normalizando el formato para que "1/07/2022" y "01/07/2022" se traten como la misma fecha). Si coinciden, no hay nada que hacer. Si difieren, o si no se pudo leer la copia de cédula de esa persona (ni por texto ni por OCR), se prioriza el dato de la cédula por ser la fuente más confiable, y la fila queda marcada con `REVISAR=SI` y una `MOTIVO_REVISAR` explicando por qué, para que puedas confirmarla a mano antes de correr las consultas.
 
 El resultado se guarda como `personas_preparadas.csv` junto al PDF de autorización, y es el archivo que le pasas después a `ejecutar_revision.py` o a cualquiera de los 5 scripts — así todos consultan exactamente los mismos datos ya revisados, en vez de que cada uno vuelva a leer y a interpretar el PDF por su cuenta.
 

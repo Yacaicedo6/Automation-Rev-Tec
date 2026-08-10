@@ -11,14 +11,28 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from datetime import datetime
 
 import pandas as pd
-import PyPDF2
 import pymupdf
 
+# Los modelos de EasyOCR pesan varios cientos de MB; si existe el disco D:
+# (usado en este equipo como almacenamiento adicional) se guardan ahí en vez
+# de en C:, para no consumir el espacio limitado del disco del sistema.
+if os.path.isdir("D:\\") and "EASYOCR_MODULE_PATH" not in os.environ:
+    os.environ["EASYOCR_MODULE_PATH"] = r"D:\ModelosIA\EasyOCR"
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+_LECTOR_OCR = None
+
 PATRON_AUTORIZACION_PDF = re.compile(
-    r"El \(la\) suscrito\(\s*a\s*\)\s+(?P<nombre>.+?)\s*,\s+identificado\(a\) con\s+"
+    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,\s+"
+    r"identificad[oa]\s*(?:\(\s*a\s*\))?\s+con\s+"
     r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
     r"(?P<doc>[\d.]+)\s*,\s+expedida en\s+.+?\s*,\s+con fecha de expedici[oó]n\s+"
     r"(?P<fecha>\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})",
@@ -28,6 +42,20 @@ PATRON_AUTORIZACION_PDF = re.compile(
 PATRON_FECHA_MES_TEXTO = re.compile(r'(\d{1,2})-([A-Z]{3})-(\d{4})', re.IGNORECASE)
 MESES = {'ENE': 1, 'FEB': 2, 'MAR': 3, 'ABR': 4, 'MAY': 5, 'JUN': 6,
          'JUL': 7, 'AGO': 8, 'SEP': 9, 'OCT': 10, 'NOV': 11, 'DIC': 12}
+
+
+def _normalizar_fecha(fecha_str):
+    """Convierte una fecha DD/MM/AAAA (con o sin ceros a la izquierda) a un
+    formato fijo de dos dígitos, para poder comparar fechas iguales
+    escritas de forma distinta (p. ej. "1/07/2022" y "01/07/2022")."""
+    partes = fecha_str.split("/")
+    if len(partes) != 3:
+        return fecha_str
+    dia, mes, anio = partes
+    try:
+        return f"{int(dia):02d}/{int(mes):02d}/{int(anio):04d}"
+    except ValueError:
+        return fecha_str
 
 
 def leer_autorizaciones(ruta_pdf):
@@ -40,7 +68,7 @@ def leer_autorizaciones(ruta_pdf):
     for pagina in documento:
         texto_completo += pagina.get_text() + " "
 
-    texto_normalizado = " ".join(texto_completo.replace("_", "").split())
+    texto_normalizado = " ".join(texto_completo.replace("_", "").replace(chr(0x200b), " ").split())
 
     filas = []
     for coincidencia in PATRON_AUTORIZACION_PDF.finditer(texto_normalizado):
@@ -66,62 +94,102 @@ def leer_autorizaciones(ruta_pdf):
             "SEGUNDO_NOMBRE": "",
             "PRIMER_APELLIDO": resto_nombre,
             "SEGUNDO_APELLIDO": "",
-            "FECHA_EXPEDICION": re.sub(r"\s+", "", coincidencia.group("fecha")),
+            "FECHA_EXPEDICION": _normalizar_fecha(re.sub(r"\s+", "", coincidencia.group("fecha"))),
         })
 
     df = pd.DataFrame(filas)
     return df.drop_duplicates(subset=["DOC"]) if not df.empty else df
 
 
-def leer_fechas_desde_cedulas(ruta_pdf):
+def _obtener_lector_ocr():
     """
-    Recorre el PDF de copias de cédula y, en las páginas que sí tengan texto
-    real (no son solo una foto/escaneo sin capa de texto), empareja el
-    número de documento con su fecha de expedición.
+    Crea (una sola vez por corrida) el lector de EasyOCR. Se carga solo
+    cuando de verdad hace falta, porque inicializarlo toma varios segundos.
+    """
+    global _LECTOR_OCR
+    if _LECTOR_OCR is None:
+        import easyocr
+        print("Cargando modelo de OCR para leer cédulas escaneadas (solo la primera vez)...")
+        _LECTOR_OCR = easyocr.Reader(['es'], gpu=False, verbose=False)
+    return _LECTOR_OCR
 
-    Retorna un diccionario {numero_documento: fecha_dd/mm/aaaa}. Las
-    personas cuya copia es solo imagen no quedan en este diccionario, porque
-    no hay forma de leerlas sin OCR.
+
+def _leer_pagina_con_ocr(pagina):
+    """
+    Renderiza una página del PDF como imagen y le aplica OCR. Se usa como
+    respaldo cuando la página no tiene una capa de texto real (es decir,
+    es una foto o un escaneo de la cédula).
+    """
+    lector_ocr = _obtener_lector_ocr()
+    archivo_temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    archivo_temp.close()
+    try:
+        pix = pagina.get_pixmap(dpi=150)
+        pix.save(archivo_temp.name)
+        # canvas_size acotado para no agotar la memoria RAM disponible con
+        # imágenes grandes; para leer los campos de una cédula no hace
+        # falta más resolución que esta.
+        fragmentos = lector_ocr.readtext(archivo_temp.name, canvas_size=1000, mag_ratio=1.0, detail=0)
+        return " ".join(fragmentos)
+    finally:
+        os.remove(archivo_temp.name)
+
+
+def leer_fechas_desde_cedulas(ruta_pdf, documentos_conocidos):
+    """
+    Recorre el PDF de copias de cédula y empareja el número de documento con
+    su fecha de expedición. Primero intenta con el texto real de la página;
+    si no tiene (es una foto o un escaneo), usa OCR sobre la imagen
+    renderizada de esa página.
+
+    `documentos_conocidos` es el conjunto de números de documento que ya se
+    sacaron del PDF de autorización: en vez de depender de que el OCR lea
+    bien la etiqueta "NÚMERO" (que a veces se confunde con el fondo de
+    seguridad de la cédula), se busca cualquier número en el texto de la
+    página que coincida con uno ya conocido.
+
+    Retorna un diccionario {numero_documento: fecha_dd/mm/aaaa}.
     """
     resultado = {}
     numero_pendiente = None
 
-    with open(ruta_pdf, 'rb') as f:
-        lector = PyPDF2.PdfReader(f)
-        for pagina in lector.pages:
-            texto = " ".join((pagina.extract_text() or "").split())
-            if not texto:
+    documento_pdf = pymupdf.open(ruta_pdf)
+    for pagina in documento_pdf:
+        texto = " ".join(pagina.get_text().split())
+        if not texto:
+            texto = _leer_pagina_con_ocr(pagina)
+        if not texto:
+            continue
+
+        numeros_en_pagina = {re.sub(r"\D", "", n) for n in re.findall(r'\d[\d.,]{5,}\d', texto)}
+        numero_en_pagina = next((n for n in numeros_en_pagina if n in documentos_conocidos), None)
+
+        fecha_en_pagina = None
+        for m_fecha in PATRON_FECHA_MES_TEXTO.finditer(texto):
+            inicio, fin = m_fecha.span()
+            antes = texto[max(0, inicio - 25):inicio].upper()
+            contexto = texto[max(0, inicio - 40):fin + 40].upper()
+            if "NACIMIENTO" in antes:
                 continue
+            if "EXPEDICI" in contexto:
+                dia, mes_txt, anio = m_fecha.groups()
+                mes = MESES.get(mes_txt.upper())
+                if mes:
+                    fecha_en_pagina = f"{int(dia):02d}/{mes:02d}/{anio}"
+                    break
 
-            m_numero = re.search(r'N[ÚU]MERO\s+([\d.,]{6,})', texto, re.IGNORECASE)
-            numero_en_pagina = re.sub(r"\D", "", m_numero.group(1)) if m_numero else None
-
-            fecha_en_pagina = None
-            for m_fecha in PATRON_FECHA_MES_TEXTO.finditer(texto):
-                inicio, fin = m_fecha.span()
-                antes = texto[max(0, inicio - 25):inicio].upper()
-                contexto = texto[max(0, inicio - 40):fin + 40].upper()
-                if "NACIMIENTO" in antes:
-                    continue
-                if "EXPEDICI" in contexto:
-                    dia, mes_txt, anio = m_fecha.groups()
-                    mes = MESES.get(mes_txt.upper())
-                    if mes:
-                        fecha_en_pagina = f"{int(dia):02d}/{mes:02d}/{anio}"
-                        break
-
-            # El número y la fecha de expedición suelen quedar en páginas
-            # distintas (frente y reverso de la cédula), así que se recuerda
-            # el número hasta encontrar su fecha, o viceversa.
-            numero_actual = numero_en_pagina or numero_pendiente
-            if numero_actual and fecha_en_pagina:
-                resultado[numero_actual] = fecha_en_pagina
-                numero_pendiente = None
-            elif numero_en_pagina and not fecha_en_pagina:
-                numero_pendiente = numero_en_pagina
-            elif fecha_en_pagina and not numero_en_pagina and numero_pendiente:
-                resultado[numero_pendiente] = fecha_en_pagina
-                numero_pendiente = None
+        # El número y la fecha de expedición suelen quedar en páginas
+        # distintas (frente y reverso de la cédula), así que se recuerda
+        # el número hasta encontrar su fecha, o viceversa.
+        numero_actual = numero_en_pagina or numero_pendiente
+        if numero_actual and fecha_en_pagina:
+            resultado[numero_actual] = fecha_en_pagina
+            numero_pendiente = None
+        elif numero_en_pagina and not fecha_en_pagina:
+            numero_pendiente = numero_en_pagina
+        elif fecha_en_pagina and not numero_en_pagina and numero_pendiente:
+            resultado[numero_pendiente] = fecha_en_pagina
+            numero_pendiente = None
 
     return resultado
 
@@ -146,7 +214,7 @@ def conciliar(df_autorizaciones, fechas_cedulas):
         if fecha_cedula is None:
             fechas_finales.append(fecha_autorizacion)
             revisar.append("SI")
-            motivos.append("No se pudo leer la copia de cédula (imagen sin texto). Verifica la fecha de expedición manualmente.")
+            motivos.append("No se encontró o no se pudo leer la copia de cédula de esta persona (ni por texto ni por OCR). Verifica la fecha de expedición manualmente.")
         elif fecha_cedula != fecha_autorizacion:
             fechas_finales.append(fecha_cedula)
             revisar.append("SI")
@@ -190,7 +258,7 @@ def main():
     fechas_cedulas = {}
     if ruta_cedulas and os.path.isfile(ruta_cedulas):
         print("\nLeyendo el PDF de copias de cédula...")
-        fechas_cedulas = leer_fechas_desde_cedulas(ruta_cedulas)
+        fechas_cedulas = leer_fechas_desde_cedulas(ruta_cedulas, set(df["DOC"]))
         print(f"Se pudo leer la fecha de expedición de {len(fechas_cedulas)} de {len(df)} persona(s) desde la cédula.")
     else:
         print("\nNo se indicó (o no se encontró) un PDF de copias de cédula; se usará solo la autorización.")

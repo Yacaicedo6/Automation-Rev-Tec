@@ -5,3 +5,4 @@ openpyxl==3.1.5
 python-dotenv==1.2.2
 PyPDF2==3.0.1
 pymupdf==1.28.2
+easyocr==1.7.2
