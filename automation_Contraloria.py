@@ -228,7 +228,7 @@ ruta_datos = obtener_ruta_datos()
 if not os.path.isfile(ruta_datos):
     raise FileNotFoundError(f"No se encontró el archivo: {ruta_datos}")
 
-directorio_base = os.path.dirname(ruta_datos)
+directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
 carpeta_destino = os.path.join(directorio_base, "Cert_CONT")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_CONT_INHABILITADOS")
 os.makedirs(carpeta_destino, exist_ok=True)
