@@ -1,0 +1,8 @@
+# Esta app maneja datos personales (postulantes a convocatorias), así que se
+# restringe explícitamente a que solo sea accesible desde este mismo equipo.
+[server]
+address = "localhost"
+headless = true
+
+[browser]
+gatherUsageStats = false
