@@ -413,15 +413,22 @@ try:
             ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
 
             if not ruta_descargada:
-                # Puede ser lentitud puntual (red, arranque del navegador) y no un
-                # rechazo real del portal, así que se reintenta una vez antes de
-                # darlo por fallido.
-                print("No llegó el archivo en el primer intento. Reintentando una vez más...")
+                # El token de reCAPTCHA ya se usó en el primer clic (y el portal
+                # suele invalidarlo tras el postback), así que reintentar con el
+                # mismo token casi siempre falla igual. Se resuelve uno nuevo
+                # antes de volver a intentar, en vez de solo repetir el clic.
+                print("No llegó el archivo en el primer intento. Resolviendo un nuevo reCAPTCHA y reintentando...")
                 try:
+                    resultado_reintento = solver.recaptcha(sitekey=sitekey_actual, url=url_formulario)
+                    driver.execute_script(
+                        f"document.getElementById('g-recaptcha-response').innerHTML = '{resultado_reintento['code']}';"
+                    )
+                    time.sleep(1)
                     btn_buscar = driver.find_element(By.ID, "btnBuscar")
                     driver.execute_script("arguments[0].click();", btn_buscar)
                     ruta_descargada = esperar_descarga(carpeta_destino, timeout=45)
-                except Exception:
+                except Exception as e:
+                    print(f"No se pudo reintentar con un nuevo captcha: {e}")
                     ruta_descargada = None
 
             if not ruta_descargada:
