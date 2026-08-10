@@ -18,10 +18,10 @@ from dotenv import load_dotenv
 # Patrón de la frase de autorización que trae cada persona en el PDF de
 # "Autorización para consulta de antecedentes" (usado cuando no hay Excel).
 PATRON_AUTORIZACION_PDF = re.compile(
-    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,\s+"
+    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,?\s+"
     r"identificad[oa]\s*(?:\(\s*a\s*\))?\s+con\s+"
     r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
-    r"(?P<doc>[\d.]+)\s*,\s+expedida en\s+.+?\s*,\s+con fecha de expedici[oó]n\s+"
+    r"(?P<doc>[\d.]+)\s*,?\s+expedida en\s+.+?\s*,?\s+con fecha de expedici[oó]n\s+"
     r"(?P<fecha>\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})",
     re.IGNORECASE,
 )
