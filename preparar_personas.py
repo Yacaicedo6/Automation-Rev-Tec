@@ -15,12 +15,13 @@ from datetime import datetime
 
 import pandas as pd
 import PyPDF2
+import pymupdf
 
 PATRON_AUTORIZACION_PDF = re.compile(
-    r"El \(la\) suscrito\(a\)\s+(?P<nombre>.+?)\s*,\s+identificado\(a\) con\s+"
+    r"El \(la\) suscrito\(\s*a\s*\)\s+(?P<nombre>.+?)\s*,\s+identificado\(a\) con\s+"
     r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
     r"(?P<doc>[\d.]+)\s*,\s+expedida en\s+.+?\s*,\s+con fecha de expedici[oó]n\s+"
-    r"(?P<fecha>\d{1,2}/\d{1,2}/\d{4})",
+    r"(?P<fecha>\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})",
     re.IGNORECASE,
 )
 
@@ -34,13 +35,12 @@ def leer_autorizaciones(ruta_pdf):
     Extrae a las personas del PDF de "Autorización para consulta de
     antecedentes" (una autorización por persona, dentro del mismo archivo).
     """
-    with open(ruta_pdf, 'rb') as f:
-        lector = PyPDF2.PdfReader(f)
-        texto_completo = ""
-        for pagina in lector.pages:
-            texto_completo += (pagina.extract_text() or "") + " "
+    documento = pymupdf.open(ruta_pdf)
+    texto_completo = ""
+    for pagina in documento:
+        texto_completo += pagina.get_text() + " "
 
-    texto_normalizado = " ".join(texto_completo.split())
+    texto_normalizado = " ".join(texto_completo.replace("_", "").split())
 
     filas = []
     for coincidencia in PATRON_AUTORIZACION_PDF.finditer(texto_normalizado):
@@ -66,7 +66,7 @@ def leer_autorizaciones(ruta_pdf):
             "SEGUNDO_NOMBRE": "",
             "PRIMER_APELLIDO": resto_nombre,
             "SEGUNDO_APELLIDO": "",
-            "FECHA_EXPEDICION": coincidencia.group("fecha"),
+            "FECHA_EXPEDICION": re.sub(r"\s+", "", coincidencia.group("fecha")),
         })
 
     df = pd.DataFrame(filas)
