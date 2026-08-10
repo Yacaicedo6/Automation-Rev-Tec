@@ -7,6 +7,7 @@ Genera un CSV limpio (con una columna REVISAR) que los 5 scripts de
 verificación pueden leer directamente ya conciliado, en vez de que cada uno
 vuelva a leer los PDFs por su cuenta.
 """
+import gc
 import os
 import re
 import shutil
@@ -119,20 +120,24 @@ def _leer_pagina_con_ocr(pagina):
     Renderiza una página del PDF como imagen y le aplica OCR. Se usa como
     respaldo cuando la página no tiene una capa de texto real (es decir,
     es una foto o un escaneo de la cédula).
+
+    La resolución de render y el tamaño de lienzo de EasyOCR se mantienen
+    bajos a propósito: este equipo tiene poca RAM libre (12 GB en total,
+    compartida con Chrome, VS Code, etc.), y un procesamiento sin este
+    límite puede hacer que el proceso muera sin ni siquiera alcanzar a
+    mostrar un error de Python.
     """
     lector_ocr = _obtener_lector_ocr()
     archivo_temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
     archivo_temp.close()
     try:
-        pix = pagina.get_pixmap(dpi=150)
+        pix = pagina.get_pixmap(dpi=100)
         pix.save(archivo_temp.name)
-        # canvas_size acotado para no agotar la memoria RAM disponible con
-        # imágenes grandes; para leer los campos de una cédula no hace
-        # falta más resolución que esta.
-        fragmentos = lector_ocr.readtext(archivo_temp.name, canvas_size=1000, mag_ratio=1.0, detail=0)
+        fragmentos = lector_ocr.readtext(archivo_temp.name, canvas_size=700, mag_ratio=1.0, detail=0)
         return " ".join(fragmentos)
     finally:
         os.remove(archivo_temp.name)
+        gc.collect()
 
 
 def leer_fechas_desde_cedulas(ruta_pdf, documentos_conocidos):
