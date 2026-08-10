@@ -48,6 +48,36 @@ def enviar_notificacion(asunto, cuerpo):
         return False
 
 
+def notificar_resultado_revision(resultados, nombres_totales):
+    """
+    Envía la notificación solo en los dos casos que realmente importan:
+    las 5 verificaciones corrieron y todas terminaron bien, o corrieron
+    y todas terminaron con error. Un resultado mixto (unas sí, otras no)
+    o incompleto (quedaron verificaciones sin correr) no envía aviso,
+    porque de todas formas hay que revisar la consola a mano.
+    """
+    nombres_ejecutados = [nombre for nombre, _ in resultados]
+    pendientes = [nombre for nombre in nombres_totales if nombre not in nombres_ejecutados]
+
+    exitosos = sum(1 for _, ok in resultados if ok)
+    fallidos = sum(1 for _, ok in resultados if not ok)
+
+    todo_bien = not pendientes and fallidos == 0 and exitosos == len(nombres_totales)
+    todo_mal = not pendientes and exitosos == 0 and fallidos == len(nombres_totales)
+
+    if not todo_bien and not todo_mal:
+        print("No se envía notificación: el resultado fue mixto o quedaron verificaciones sin correr.")
+        return False
+
+    lineas = [f"  [{'completado' if ok else 'terminó con errores'}] {nombre}" for nombre, ok in resultados]
+    asunto = (
+        "Revisión técnico-administrativa: completada sin errores"
+        if todo_bien
+        else "Revisión técnico-administrativa: todas las verificaciones fallaron"
+    )
+    return enviar_notificacion(asunto, "\n".join(lineas))
+
+
 if __name__ == "__main__":
     asunto = sys.argv[1] if len(sys.argv) > 1 else "Aviso de Automation-Rev-Tec"
     cuerpo = sys.argv[2] if len(sys.argv) > 2 else "Este es un correo de prueba."

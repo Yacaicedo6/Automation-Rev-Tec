@@ -15,7 +15,7 @@ from pathlib import Path
 
 DIRECTORIO_SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
-from notificar import enviar_notificacion
+from notificar import notificar_resultado_revision
 
 # Pausa entre una verificación y la siguiente, para que Chrome/chromedriver
 # terminen de liberar recursos antes de abrir el próximo navegador. Sin esta
@@ -120,9 +120,8 @@ def mostrar_resumen(resultados):
         print(linea)
         lineas.append(linea)
 
-    todo_ok = all(ok for _, ok in resultados) and not pendientes
-    asunto = "Revisión técnico-administrativa: completada" if todo_ok else "Revisión técnico-administrativa: terminó con pendientes"
-    enviar_notificacion(asunto, "\n".join(lineas))
+    nombres_totales = [nombre for nombre, _ in VERIFICACIONES]
+    notificar_resultado_revision(resultados, nombres_totales)
 
 
 if __name__ == "__main__":
