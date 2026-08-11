@@ -13,9 +13,13 @@ import streamlit as st
 DIRECTORIO_WEBAPP = Path(__file__).resolve().parent.parent
 DIRECTORIO_SCRIPTS = DIRECTORIO_WEBAPP.parent
 sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
+sys.path.insert(0, str(DIRECTORIO_WEBAPP))
+
+from _estilos import aplicar_estilos, insignia_html  # noqa: E402
 
 st.set_page_config(page_title="Panorama general", page_icon="🗂️", layout="wide")
-st.title("3. Panorama general")
+aplicar_estilos()
+st.title("🗂️ 3. Panorama general")
 
 ENTIDADES = [
     ("RNMC", "RNMC"),
@@ -70,12 +74,12 @@ def _estado_persona(carpeta_grupo, codigo, doc):
 def _resumen_entidad(carpeta_grupo, codigo, documentos):
     estados = [_estado_persona(carpeta_grupo, codigo, doc) for doc in documentos]
     if any(e == "alerta" for e in estados):
-        return f"⚠️ {estados.count('alerta')} con alerta"
+        return insignia_html(f"⚠️ {estados.count('alerta')} con alerta", "alerta")
     ok = estados.count("ok")
     total = len(estados)
     if ok == total:
-        return f"✅ {ok}/{total}"
-    return f"⏳ {ok}/{total}"
+        return insignia_html(f"✅ {ok}/{total}", "ok")
+    return insignia_html(f"⏳ {ok}/{total}", "pendiente")
 
 
 st.session_state.setdefault("carpeta_raiz", "")
@@ -122,10 +126,13 @@ if carpeta_raiz and st.session_state.get("panorama_actualizado"):
                 cols = st.columns(len(ENTIDADES) + 1)
                 cols[0].caption(f"{len(documentos)} persona(s)")
                 if pendientes_revision:
-                    cols[0].caption(f"⚠️ {pendientes_revision} por revisar en el CSV")
+                    cols[0].markdown(
+                        insignia_html(f"{pendientes_revision} por revisar en el CSV", "alerta"),
+                        unsafe_allow_html=True,
+                    )
 
                 for col, (codigo, etiqueta) in zip(cols[1:], ENTIDADES):
                     col.caption(etiqueta)
-                    col.write(_resumen_entidad(carpeta_grupo, codigo, documentos))
+                    col.markdown(_resumen_entidad(carpeta_grupo, codigo, documentos), unsafe_allow_html=True)
 else:
     st.info("Indica la carpeta raíz y presiona **Actualizar panorama** para ver el estado de todos los postulantes.")

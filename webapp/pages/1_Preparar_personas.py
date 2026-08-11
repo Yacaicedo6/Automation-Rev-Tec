@@ -13,11 +13,14 @@ import streamlit as st
 DIRECTORIO_WEBAPP = Path(__file__).resolve().parent.parent
 DIRECTORIO_SCRIPTS = DIRECTORIO_WEBAPP.parent
 sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
+sys.path.insert(0, str(DIRECTORIO_WEBAPP))
 
 import preparar_personas as pp  # noqa: E402
+from _estilos import aplicar_estilos  # noqa: E402
 
 st.set_page_config(page_title="Preparar personas", page_icon="📋", layout="wide")
-st.title("1. Preparar personas")
+aplicar_estilos()
+st.title("📋 1. Preparar personas")
 
 COLUMNAS_EDITABLES = [
     "DOC", "TIPO_DOC", "PRIMER_NOMBRE", "SEGUNDO_NOMBRE",

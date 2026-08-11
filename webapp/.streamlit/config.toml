@@ -6,3 +6,15 @@ headless = true
 
 [browser]
 gatherUsageStats = false
+
+# Paleta pastel con un acento vivo, para que la app se vea más amigable y
+# los estados (listo / pendiente / alerta) sean fáciles de distinguir de un
+# vistazo.
+[theme]
+base = "light"
+primaryColor = "#6C63FF"
+backgroundColor = "#FAF9FF"
+secondaryBackgroundColor = "#EFEAFB"
+textColor = "#2E2A4A"
+font = "sans serif"
+baseRadius = "large"
