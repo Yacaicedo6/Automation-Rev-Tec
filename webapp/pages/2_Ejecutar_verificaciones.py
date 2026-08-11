@@ -89,6 +89,19 @@ if iniciar:
         estado_placeholder.info("Corriendo...")
 
         ruta_script = DIRECTORIO_SCRIPTS / archivo
+
+        # PYTHONUNBUFFERED es necesario para que la salida llegue línea por
+        # línea en vivo: al escribir a una tubería (en vez de a una consola),
+        # Python bufferiza por bloques por defecto, así que sin esto el
+        # progreso solo aparecería todo junto al final.
+        # PYTHONUTF8 asegura que el script hijo escriba de verdad en UTF-8;
+        # sin esto, en Windows suele usar la página de códigos ANSI del
+        # sistema al escribir a una tubería, y las tildes/eñes llegarían
+        # corruptas al decodificar como UTF-8 del lado de la webapp.
+        entorno = os.environ.copy()
+        entorno["PYTHONUNBUFFERED"] = "1"
+        entorno["PYTHONUTF8"] = "1"
+
         proceso = subprocess.Popen(
             [sys.executable, str(ruta_script), ruta_datos],
             stdout=subprocess.PIPE,
@@ -97,6 +110,7 @@ if iniciar:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            env=entorno,
         )
 
         lineas = []
