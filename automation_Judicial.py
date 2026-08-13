@@ -1,4 +1,6 @@
 import pandas as pd
+import requests
+import urllib3
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,6 +16,30 @@ import PyPDF2
 import pymupdf
 from twocaptcha import TwoCaptcha
 from dotenv import load_dotenv
+
+URL_JUDICIAL = "https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml"
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def verificar_portal_disponible(url, timeout=8):
+    """
+    Comprobación rápida (sin abrir Chrome) de si el portal responde antes de
+    gastar tiempo y créditos de captcha en todo el lote. No garantiza que las
+    consultas individuales vayan a funcionar -el sitio puede cargar bien y
+    aun así el motor de consulta del fondo devolver la pantalla vacía-, pero
+    detecta el caso más común: el portal está caído, muy lento o da error de
+    servidor.
+
+    Este portal usa un certificado que Chrome solo acepta porque el script
+    abre el navegador con --ignore-certificate-errors; se hace lo mismo aquí
+    (verify=False) para no marcarlo como caído por un problema de certificado
+    que de todas formas no impide la consulta real.
+    """
+    try:
+        respuesta = requests.get(url, timeout=timeout, verify=False)
+        return respuesta.status_code < 500
+    except requests.exceptions.RequestException:
+        return False
 
 # Patrón de la frase de autorización que trae cada persona en el PDF de
 # "Autorización para consulta de antecedentes" (usado cuando no hay Excel).
@@ -210,6 +236,11 @@ if not os.path.isfile(ruta_datos):
 directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
 carpeta_destino = os.path.join(directorio_base, "Cert_JUD")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_JUD_INHABILITADOS")
+# Resultados donde el portal no devolvió nada (probable caída/lentitud del
+# servicio): se guardan aparte de las alertas reales, y a propósito no se
+# revisan en el "ya existe, se omite" de más abajo, para que la próxima
+# corrida los vuelva a intentar automáticamente en vez de darlos por hechos.
+carpeta_inconclusos = os.path.join(directorio_base, "Cert_JUD_INCONCLUSOS")
 
 # Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
 # Se siguen revisando para no volver a descargar (y gastar créditos de 2Captcha)
@@ -220,6 +251,7 @@ carpeta_inhabilitados_vieja = os.path.join(directorio_base, "Certificados_Polici
 # Crear carpetas si no existen
 os.makedirs(carpeta_destino, exist_ok=True)
 os.makedirs(carpeta_inhabilitados, exist_ok=True)
+os.makedirs(carpeta_inconclusos, exist_ok=True)
 
 # Ejecutar auditoría antes de iniciar la automatización
 print("Auditando certificados previamente descargados...")
@@ -238,6 +270,16 @@ if df.empty:
     print("No se encontró ninguna persona con documento válido en el archivo.")
 
 lista_alertas_finales = alertas_historicas.copy()
+lista_inconclusos = []
+
+print("Comprobando disponibilidad del portal Judicial de la Policía...")
+if not verificar_portal_disponible(URL_JUDICIAL):
+    print("Atención: el portal Judicial no respondió bien en esta comprobación (puede estar caído, muy lento o en mantenimiento).")
+    if input("¿Continuar de todas formas? (s/n): ").strip().lower() != "s":
+        print("Ejecución cancelada por el usuario.")
+        sys.exit(1)
+else:
+    print("El portal Judicial respondió correctamente.")
 
 # ==========================================
 # 3. CONFIGURAR NAVEGADOR
@@ -289,6 +331,7 @@ try:
         nombre_archivo_esperado = f"JUD_{primer_nombre_archivo}_{num_doc}.pdf"
         ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
+        ruta_esperada_inconcluso = os.path.join(carpeta_inconclusos, nombre_archivo_esperado)
 
         nombre_limpio = "".join(c for c in nombre_completo if c.isalnum() or c in " -_").strip()
         nombre_archivo_viejo = f"Policia-{nombre_limpio}.pdf"
@@ -380,6 +423,10 @@ try:
             exito_generacion = False
             intentos_validacion = 0
 
+            # Estado de la pantalla justo antes de consultar, para poder saber
+            # después si el portal de verdad cambió algo o se quedó en blanco.
+            texto_antes_consulta = driver.find_element(By.TAG_NAME, "body").text
+
             while intentos_validacion < 2 and not exito_generacion:
                 print("Enviando formulario...")
 
@@ -422,13 +469,35 @@ try:
             print("Analizando pantalla de resultados...")
 
             try:
-                # Pausa para dar tiempo a que cargue el texto de respuesta
-                time.sleep(3)
-                texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
+                # El resultado se carga por AJAX y el portal tarda un tiempo
+                # variable en renderizarlo: una pausa fija a veces no alcanzaba
+                # y se capturaba la página todavía en blanco (falso positivo
+                # de "asunto pendiente"). En su lugar se espera hasta que el
+                # texto deje de cambiar entre una lectura y la siguiente (o
+                # hasta 20s como máximo).
+                texto_pantalla = ""
+                texto_anterior = None
+                for _ in range(20):
+                    texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
+                    if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
+                        break
+                    if texto_pantalla == texto_anterior:
+                        break
+                    texto_anterior = texto_pantalla
+                    time.sleep(1)
 
                 if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
                     ruta_final_guardado = ruta_esperada_normal
                     print("Resultados limpios. Se guarda en la carpeta estándar...")
+                elif texto_pantalla.strip() == texto_antes_consulta.strip():
+                    # La pantalla nunca cambió después de consultar: lo más
+                    # probable es que el portal esté caído o muy lento y no
+                    # llegó a responder, no que haya un antecedente real. Se
+                    # guarda aparte para reintentar en la próxima corrida en
+                    # vez de sonar la alarma de una alerta real.
+                    ruta_final_guardado = ruta_esperada_inconcluso
+                    print("Atención: el portal no devolvió ningún resultado (posible caída o lentitud del servicio). Se guarda para reintentar más tarde...")
+                    lista_inconclusos.append(nombre_archivo_esperado.replace(".pdf", ""))
                 else:
                     ruta_final_guardado = ruta_esperada_inhab
                     print("Atención: se detectó un posible asunto pendiente. Se guarda en la carpeta de alertas...")
@@ -481,6 +550,12 @@ finally:
         print(f"\nRevisa manualmente los documentos en la carpeta:\n{carpeta_inhabilitados}")
     else:
         print("No se encontraron registros con asuntos pendientes en esta tanda.")
+
+    if lista_inconclusos:
+        print(f"\nAdemás, {len(lista_inconclusos)} consulta(s) no obtuvieron respuesta del portal (posible caída o lentitud, no son alertas reales):")
+        for inconcluso in lista_inconclusos:
+            print(f"   - {inconcluso}")
+        print(f"Quedaron en:\n{carpeta_inconclusos}\nVuelve a correr el script más tarde para reintentarlas.")
 
     print("="*50)
     print("Cerrando navegador...")
