@@ -55,6 +55,9 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     alertas_encontradas = []
     frase_normalizada = "".join(FRASE_LIMPIA.split())
 
+    if not os.path.isdir(carpeta_origen):
+        return alertas_encontradas
+
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
@@ -69,6 +72,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                 texto_limpio = "".join(texto_pdf.upper().split())
 
                 if frase_normalizada not in texto_limpio:
+                    os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
@@ -210,8 +214,9 @@ if not os.path.isfile(ruta_datos):
 directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
 carpeta_destino = os.path.join(directorio_base, "Cert_RNMC")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_RNMC_INHABILITADOS")
-os.makedirs(carpeta_destino, exist_ok=True)
-os.makedirs(carpeta_inhabilitados, exist_ok=True)
+# Las carpetas ya no se crean las dos de una vez: cada una se crea solo
+# cuando de verdad hay algo que guardar ahí, para no dejar carpetas vacías
+# (p. ej. la de alertas cuando nadie tuvo ninguna).
 
 # Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
 # Se siguen revisando para no volver a descargar (y gastar tiempo/créditos) lo
@@ -363,6 +368,7 @@ try:
 
                     nombre_error = f"ERROR_{num_doc}.png"
                     ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
+                    os.makedirs(carpeta_inhabilitados, exist_ok=True)
                     driver.save_screenshot(ruta_error)
                     lista_alertas_finales.append(nombre_error.replace(".png", ""))
                     fallos_consecutivos = 0  # el portal respondió; el problema es del dato, no del sitio
@@ -376,6 +382,7 @@ try:
                         "landscape": False
                     })
 
+                    os.makedirs(carpeta_destino, exist_ok=True)
                     with open(ruta_final_guardado, "wb") as file:
                         file.write(base64.b64decode(pdf_data['data']))
 
@@ -394,6 +401,7 @@ try:
                         "landscape": False
                     })
 
+                    os.makedirs(carpeta_inhabilitados, exist_ok=True)
                     with open(ruta_final_guardado, "wb") as file:
                         file.write(base64.b64decode(pdf_data['data']))
 
@@ -408,6 +416,7 @@ try:
                 print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc} (posible caída o lentitud del portal). Se guarda una captura de pantalla para revisión manual...")
                 nombre_error = f"ERROR_{num_doc}.png"
                 ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
+                os.makedirs(carpeta_inhabilitados, exist_ok=True)
                 driver.save_screenshot(ruta_error)
                 lista_inconclusos.append(nombre_error.replace(".png", ""))
                 errores_no_manejados += 1
