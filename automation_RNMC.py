@@ -1,4 +1,5 @@
 import pandas as pd
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -14,6 +15,23 @@ import PyPDF2
 import pymupdf
 
 FRASE_LIMPIA = "NO TIENE MEDIDAS CORRECTIVAS PENDIENTES POR CUMPLIR"
+URL_RNMC = "https://srvcnpc.policia.gov.co/PSC/frm_cnp_consulta.aspx"
+
+
+def verificar_portal_disponible(url, timeout=8):
+    """
+    Comprobación rápida (sin abrir Chrome) de si el portal responde antes de
+    gastar tiempo y créditos de captcha en todo el lote. No garantiza que las
+    consultas individuales vayan a funcionar -el sitio puede cargar bien y
+    aun así el motor de consulta del fondo devolver la pantalla vacía-, pero
+    detecta el caso más común: el portal está caído, muy lento o da error de
+    servidor.
+    """
+    try:
+        respuesta = requests.get(url, timeout=timeout)
+        return respuesta.status_code < 500
+    except requests.exceptions.RequestException:
+        return False
 
 # Patrón de la frase de autorización que trae cada persona en el PDF de
 # "Autorización para consulta de antecedentes" (usado cuando no hay Excel).
@@ -219,12 +237,26 @@ if df.empty:
     print("No se encontró ninguna persona con documento válido en el archivo.")
 
 lista_alertas_finales = alertas_historicas.copy()
+lista_inconclusos = []
+
+print("Comprobando disponibilidad del portal de RNMC...")
+if not verificar_portal_disponible(URL_RNMC):
+    print("Atención: el portal de RNMC no respondió bien en esta comprobación (puede estar caído, muy lento o en mantenimiento).")
+    if input("¿Continuar de todas formas? (s/n): ").strip().lower() != "s":
+        print("Ejecución cancelada por el usuario.")
+        sys.exit(1)
+else:
+    print("El portal de RNMC respondió correctamente.")
 
 # ==========================================
 # 2. INICIAR NAVEGADOR Y AUTOMATIZACIÓN
 # ==========================================
 driver = webdriver.Chrome()
 wait = WebDriverWait(driver, 15)
+# Espera más larga solo para el resultado de la consulta: el portal a veces
+# tarda más de 15s en responder (se ve su propio modal de "procesando"), y con
+# la espera corta el script abandonaba antes de que el portal terminara.
+wait_resultado = WebDriverWait(driver, 35)
 
 errores_no_manejados = 0
 fallos_consecutivos = 0
@@ -315,7 +347,7 @@ try:
             # ==========================================
             try:
                 # Esperamos lo que aparezca primero: el resultado ("informa:") o un modal de error del portal
-                wait.until(lambda d: "informa:" in d.find_element(By.TAG_NAME, "body").text.lower()
+                wait_resultado.until(lambda d: "informa:" in d.find_element(By.TAG_NAME, "body").text.lower()
                                       or "error" in d.find_element(By.TAG_NAME, "body").text.lower())
                 time.sleep(2)
 
@@ -369,11 +401,15 @@ try:
                     fallos_consecutivos = 0
 
             except Exception:
-                print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc}. Se guarda una captura de pantalla en la carpeta de alertas para revisión manual...")
+                # El portal no llegó a mostrar ni el resultado ni un modal de error dentro
+                # del tiempo de espera: es más probable que sea el servicio caído o lento
+                # que una medida correctiva real, así que se guarda aparte para reintentar,
+                # en vez de mezclarlo con las alertas de verdad.
+                print(f"Se agotó el tiempo de espera procesando el resultado de {num_doc} (posible caída o lentitud del portal). Se guarda una captura de pantalla para revisión manual...")
                 nombre_error = f"ERROR_{num_doc}.png"
                 ruta_error = os.path.join(carpeta_inhabilitados, nombre_error)
                 driver.save_screenshot(ruta_error)
-                lista_alertas_finales.append(nombre_error.replace(".png", ""))
+                lista_inconclusos.append(nombre_error.replace(".png", ""))
                 errores_no_manejados += 1
                 fallos_consecutivos += 1
                 if circuito_abierto(fallos_consecutivos):
@@ -406,6 +442,12 @@ finally:
         print(f"\nRevisa manualmente los documentos en la carpeta:\n{carpeta_inhabilitados}")
     else:
         print("No se encontraron medidas correctivas pendientes en esta tanda.")
+
+    if lista_inconclusos:
+        print(f"\nAdemás, {len(lista_inconclusos)} consulta(s) no obtuvieron respuesta del portal a tiempo (posible caída o lentitud, no son alertas reales):")
+        for inconcluso in lista_inconclusos:
+            print(f"   - {inconcluso}")
+        print("Vuelve a correr el script más tarde para reintentarlas.")
 
     print("="*50)
     print("Cerrando navegador...")
