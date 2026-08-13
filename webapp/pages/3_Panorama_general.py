@@ -17,9 +17,9 @@ sys.path.insert(0, str(DIRECTORIO_WEBAPP))
 
 from _estilos import aplicar_estilos, insignia_html  # noqa: E402
 
-st.set_page_config(page_title="Panorama general", page_icon="🗂️", layout="wide")
+st.set_page_config(page_title="Panorama general", layout="wide")
 aplicar_estilos()
-st.title("🗂️ 3. Panorama general")
+st.title("3. Panorama general")
 
 ENTIDADES = [
     ("RNMC", "RNMC"),
@@ -74,12 +74,12 @@ def _estado_persona(carpeta_grupo, codigo, doc):
 def _resumen_entidad(carpeta_grupo, codigo, documentos):
     estados = [_estado_persona(carpeta_grupo, codigo, doc) for doc in documentos]
     if any(e == "alerta" for e in estados):
-        return insignia_html(f"⚠️ {estados.count('alerta')} con alerta", "alerta")
+        return insignia_html(f"{estados.count('alerta')} con alerta", "alerta")
     ok = estados.count("ok")
     total = len(estados)
     if ok == total:
-        return insignia_html(f"✅ {ok}/{total}", "ok")
-    return insignia_html(f"⏳ {ok}/{total}", "pendiente")
+        return insignia_html(f"Completo {ok}/{total}", "ok")
+    return insignia_html(f"En curso {ok}/{total}", "pendiente")
 
 
 st.session_state.setdefault("carpeta_raiz", "")

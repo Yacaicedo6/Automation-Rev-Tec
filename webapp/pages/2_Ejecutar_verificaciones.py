@@ -18,9 +18,9 @@ sys.path.insert(0, str(DIRECTORIO_WEBAPP))
 from notificar import notificar_resultado_revision  # noqa: E402
 from _estilos import aplicar_estilos  # noqa: E402
 
-st.set_page_config(page_title="Ejecutar verificaciones", page_icon="✅", layout="wide")
+st.set_page_config(page_title="Ejecutar verificaciones", layout="wide")
 aplicar_estilos()
-st.title("✅ 2. Ejecutar verificaciones")
+st.title("2. Ejecutar verificaciones")
 
 VERIFICACIONES = [
     ("RNMC - Policía (Medidas Correctivas)", "automation_RNMC.py"),

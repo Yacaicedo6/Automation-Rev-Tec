@@ -7,14 +7,15 @@ headless = true
 [browser]
 gatherUsageStats = false
 
-# Paleta pastel con un acento vivo, para que la app se vea más amigable y
-# los estados (listo / pendiente / alerta) sean fáciles de distinguir de un
-# vistazo.
+# Paleta editorial cálida (inspirada en Cursor): lienzo crema, tinta casi
+# negra, y un único acento naranja reservado para los botones principales.
+# El resto de la personalidad (tarjetas sin sombra, insignias en pastilla)
+# se aplica en _estilos.py.
 [theme]
 base = "light"
-primaryColor = "#6C63FF"
-backgroundColor = "#FAF9FF"
-secondaryBackgroundColor = "#EFEAFB"
-textColor = "#2E2A4A"
+primaryColor = "#F54E00"
+backgroundColor = "#F7F7F4"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#26251E"
 font = "sans serif"
-baseRadius = "large"
+baseRadius = "medium"
