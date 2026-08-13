@@ -118,6 +118,9 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     alertas_encontradas = []
     frase_normalizada = "".join(FRASE_LIMPIA.split())
 
+    if not os.path.isdir(carpeta_origen):
+        return alertas_encontradas
+
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
@@ -132,6 +135,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                 texto_limpio = "".join(texto_pdf.upper().split())
 
                 if frase_normalizada not in texto_limpio:
+                    os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
@@ -273,8 +277,10 @@ if not os.path.isfile(ruta_datos):
 directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
 carpeta_destino = os.path.join(directorio_base, "Cert_PROC")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_PROC_INHABILITADOS")
+# carpeta_destino sí se crea de una vez porque Chrome la necesita lista como
+# carpeta de descargas antes de abrir el navegador. carpeta_inhabilitados se
+# deja para crearse solo si de verdad aparece una alerta.
 os.makedirs(carpeta_destino, exist_ok=True)
-os.makedirs(carpeta_inhabilitados, exist_ok=True)
 
 # Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
 # Se siguen revisando para no volver a descargar (y perder tiempo) lo que ya
@@ -521,6 +527,7 @@ try:
             if frase_normalizada in texto_limpio:
                 print(f"Resultado limpio. Documento guardado como '{nombre_archivo_esperado}'.")
             else:
+                os.makedirs(carpeta_inhabilitados, exist_ok=True)
                 shutil.move(ruta_esperada_normal, ruta_esperada_inhab)
                 print("Atención: se detectó una posible sanción o inhabilidad vigente. Se movió a la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))

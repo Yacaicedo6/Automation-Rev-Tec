@@ -79,6 +79,9 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     """
     alertas_encontradas = []
 
+    if not os.path.isdir(carpeta_origen):
+        return alertas_encontradas
+
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
@@ -95,6 +98,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
                 # Frase clave normalizada
                 if "NOTIENEASUNTOSPENDIENTES" not in texto_limpio:
+                    os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
@@ -248,10 +252,9 @@ carpeta_inconclusos = os.path.join(directorio_base, "Cert_JUD_INCONCLUSOS")
 carpeta_destino_vieja = os.path.join(directorio_base, "Certificados_Policia")
 carpeta_inhabilitados_vieja = os.path.join(directorio_base, "Certificados_Policia_INHABILITADOS")
 
-# Crear carpetas si no existen
-os.makedirs(carpeta_destino, exist_ok=True)
-os.makedirs(carpeta_inhabilitados, exist_ok=True)
-os.makedirs(carpeta_inconclusos, exist_ok=True)
+# Las 3 carpetas se crean solo cuando de verdad hay algo que guardar en cada
+# una (más abajo, justo antes de escribir el PDF), para no dejar carpetas
+# vacías si nadie tuvo alertas o inconclusos en esta tanda.
 
 # Ejecutar auditoría antes de iniciar la automatización
 print("Auditando certificados previamente descargados...")
@@ -512,6 +515,7 @@ try:
                     "preferCSSPageSize": True
                 })
 
+                os.makedirs(os.path.dirname(ruta_final_guardado), exist_ok=True)
                 with open(ruta_final_guardado, "wb") as f:
                     f.write(base64.b64decode(pdf_data['data']))
 

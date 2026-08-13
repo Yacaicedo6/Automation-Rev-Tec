@@ -56,6 +56,9 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     alertas_encontradas = []
     frase_normalizada = "".join(FRASE_LIMPIA.split())
 
+    if not os.path.isdir(carpeta_origen):
+        return alertas_encontradas
+
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
@@ -70,6 +73,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                 texto_limpio = "".join(texto_pdf.upper().split())
 
                 if frase_normalizada not in texto_limpio:
+                    os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
@@ -232,8 +236,10 @@ if not os.path.isfile(ruta_datos):
 directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
 carpeta_destino = os.path.join(directorio_base, "Cert_CONT")
 carpeta_inhabilitados = os.path.join(directorio_base, "Cert_CONT_INHABILITADOS")
+# carpeta_destino sí se crea de una vez porque Chrome la necesita lista como
+# carpeta de descargas antes de abrir el navegador. carpeta_inhabilitados se
+# deja para crearse solo si de verdad aparece una alerta.
 os.makedirs(carpeta_destino, exist_ok=True)
-os.makedirs(carpeta_inhabilitados, exist_ok=True)
 
 # Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
 # Se siguen revisando para no volver a descargar (y gastar créditos de 2Captcha)
@@ -474,6 +480,7 @@ try:
                 import winsound
                 winsound.Beep(2000, 1000)
 
+            os.makedirs(os.path.dirname(ruta_final), exist_ok=True)
             shutil.move(ruta_descargada, ruta_final)
             print("Documento procesado correctamente.")
             fallos_consecutivos = 0
