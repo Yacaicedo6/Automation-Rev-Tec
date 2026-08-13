@@ -52,6 +52,9 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     """
     alertas_encontradas = []
 
+    if not os.path.isdir(carpeta_origen):
+        return alertas_encontradas
+
     # Recorrer los archivos en la carpeta normal
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
@@ -67,6 +70,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
 
                 # Clasificar y mover si es necesario
                 if "NO REGISTRA INHABILIDAD" not in texto_pdf.upper():
+                    os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     # Mover el archivo físicamente
                     shutil.move(ruta_pdf, ruta_nueva)
@@ -216,9 +220,9 @@ carpeta_inhabilitados = os.path.join(directorio_base, "Cert_DSEX_INHABILITADOS")
 carpeta_destino_vieja = os.path.join(directorio_base, "Certificados_Delitos_Sexuales")
 carpeta_inhabilitados_vieja = os.path.join(directorio_base, "Certificados_Delitos_Sexuales_INHABILITADOS")
 
-# Crear carpetas si no existen
-os.makedirs(carpeta_destino, exist_ok=True)
-os.makedirs(carpeta_inhabilitados, exist_ok=True)
+# Las 2 carpetas se crean solo cuando de verdad hay algo que guardar en cada
+# una (más abajo, justo antes de escribir el PDF), para no dejar carpetas
+# vacías si nadie tuvo alertas en esta tanda.
 
 # Ejecutar auditoría antes de iniciar la automatización
 print("Auditando certificados previamente descargados...")
@@ -437,6 +441,7 @@ try:
                     "preferCSSPageSize": True
                 })
 
+                os.makedirs(os.path.dirname(ruta_final_guardado), exist_ok=True)
                 with open(ruta_final_guardado, "wb") as f:
                     f.write(base64.b64decode(pdf_data['data']))
 
