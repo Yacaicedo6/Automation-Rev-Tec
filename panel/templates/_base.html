@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{% block titulo %}Revisión técnico-administrativa{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background:#F7F7F4; color:#26251E; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .insignia { display:inline-block; padding:0.2rem 0.7rem; border-radius:9999px; font-weight:600; font-size:0.72rem; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap; }
+  {% block estilos %}{% endblock %}
+</style>
+</head>
+<body class="h-screen flex overflow-hidden">
+
+  <!-- Barra lateral -->
+  <aside class="w-60 shrink-0 bg-[#26251E] text-[#F7F7F4] flex flex-col">
+    <div class="px-5 py-5 border-b border-white/10">
+      <div class="text-sm font-medium tracking-tight">Revisión técnico-administrativa</div>
+      <div class="text-xs text-white/50 mt-0.5">Alcaldía de Cali</div>
+    </div>
+    <nav class="flex-1 px-3 py-4 flex flex-col gap-1 text-sm">
+      <a href="/" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'verificaciones' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Ejecutar verificaciones</a>
+      <a href="/preparar" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'preparar' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Preparar personas</a>
+      <a href="/panorama" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'panorama' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Panorama general</a>
+      <a href="/configuracion" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'configuracion' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Configuración</a>
+    </nav>
+    <div class="p-4 border-t border-white/10">
+      <div class="bg-white/5 rounded-xl p-3">
+        <div class="text-xs text-white/50 mb-1.5">Estado</div>
+        <div class="flex items-center gap-2 text-xs text-white/80">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Panel activo, en tu equipo
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Contenido -->
+  <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+    <header class="shrink-0 border-b border-[#E6E5E0] bg-white px-6 py-3 flex items-center justify-between">
+      <h1 class="text-lg font-medium tracking-tight leading-tight">{% block encabezado %}{% endblock %}</h1>
+      {% block encabezado_extra %}{% endblock %}
+    </header>
+    <main class="flex-1 min-h-0 overflow-y-auto">
+      {% block contenido %}{% endblock %}
+    </main>
+  </div>
+
+{% block script %}{% endblock %}
+</body>
+</html>
