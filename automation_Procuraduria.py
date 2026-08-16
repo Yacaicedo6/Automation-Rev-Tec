@@ -318,9 +318,15 @@ prefs = {
     "plugins.always_open_pdf_externally": True
 }
 opciones.add_experimental_option("prefs", prefs)
+opciones.add_argument("--window-size=1280,800")
 
 driver = webdriver.Chrome(options=opciones)
 wait = WebDriverWait(driver, 25)
+# Espera más larga solo para el botón de "Descargar": el propio HTML del
+# portal de la Procuraduría configura su UpdatePanel de ASP.NET con un
+# timeout de 360000ms (6 minutos) -- ellos mismos anticipan que la consulta
+# puede tardar así de lento en días congestionados. 60s se quedaba muy corto.
+wait_descarga = WebDriverWait(driver, 180)
 
 errores_no_manejados = 0
 fallos_consecutivos = 0
@@ -480,7 +486,7 @@ try:
                 //input[contains(translate(@src, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'descargar')]
                 """
 
-                btn_descarga = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_boton_descarga)))
+                btn_descarga = wait_descarga.until(EC.element_to_be_clickable((By.XPATH, xpath_boton_descarga)))
 
                 try:
                     btn_descarga.click()
@@ -494,8 +500,16 @@ try:
                 if not descarga_lista:
                     print("Se agotó el tiempo de espera. El servidor de la Procuraduría no generó el archivo.")
 
-            except Exception:
-                print("No se detectó el botón de descarga en la segunda pantalla. Revisando carpeta...")
+            except Exception as e:
+                print(f"No se detectó el botón de descarga en la segunda pantalla ({e}). Revisando carpeta...")
+                ruta_debug = os.path.join(carpeta_destino, f"DEBUG_{num_doc}.png")
+                try:
+                    driver.save_screenshot(ruta_debug)
+                    print(f"Captura de diagnóstico guardada en: {ruta_debug}")
+                    with open(os.path.join(carpeta_destino, f"DEBUG_{num_doc}.html"), "w", encoding="utf-8") as f_debug:
+                        f_debug.write(driver.page_source)
+                except Exception:
+                    pass
                 descarga_lista = esperar_y_renombrar_descarga(carpeta_destino, nombre_archivo_esperado, timeout=10)
                 if not descarga_lista:
                     print("No se pudo procesar la descarga de este documento.")
