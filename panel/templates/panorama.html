@@ -1,0 +1,189 @@
+{% extends "_base.html" %}
+{% block titulo %}Panorama general{% endblock %}
+{% block encabezado %}Panorama general{% endblock %}
+
+{% block contenido %}
+  <div class="h-full overflow-y-auto p-6 flex flex-col gap-5">
+
+    <div class="bg-white border border-[#E6E5E0] rounded-xl p-4 flex gap-2 max-w-3xl">
+      <input id="carpeta-raiz" type="text" placeholder="Carpeta raíz de la convocatoria (ej. REV_TEC_ADM_CIRCULA)"
+             class="flex-1 min-w-0 border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs mono focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+      <button id="btn-buscar-carpeta" type="button"
+              class="border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs hover:bg-[#F7F7F4] transition-colors whitespace-nowrap">
+        Buscar carpeta...
+      </button>
+      <button id="btn-actualizar"
+              class="bg-[#F54E00] text-white rounded-lg px-4 py-1.5 text-xs font-medium hover:bg-[#D04200] transition-colors whitespace-nowrap">
+        Actualizar panorama
+      </button>
+    </div>
+
+    <div id="tarjetas-stats" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+    <div id="mensaje" class="text-sm text-[#807D72]">Indica la carpeta raíz y presiona "Actualizar panorama".</div>
+
+    <div id="lista-grupos" class="flex flex-col gap-3 pb-6"></div>
+
+  </div>
+
+  <!-- Explorador de carpetas -->
+  <div id="modal-explorador" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#E6E5E0] flex items-center justify-between gap-3">
+        <span class="font-medium text-sm shrink-0">Selecciona la carpeta</span>
+        <button id="btn-usar-carpeta" class="bg-[#F54E00] text-white rounded-lg px-3 py-1 text-xs font-medium hover:bg-[#D04200] whitespace-nowrap">Usar esta carpeta</button>
+        <button id="btn-cerrar-explorador" class="text-[#807D72] hover:text-[#26251E]">✕</button>
+      </div>
+      <div id="ruta-explorador" class="px-5 py-2 text-xs mono text-[#807D72] border-b border-[#E6E5E0] break-all"></div>
+      <div id="lista-explorador" class="flex-1 overflow-y-auto p-2"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block script %}
+<script>
+const carpetaRaizInput = document.getElementById('carpeta-raiz');
+const btnActualizar = document.getElementById('btn-actualizar');
+const tarjetasStats = document.getElementById('tarjetas-stats');
+const mensaje = document.getElementById('mensaje');
+const listaGrupos = document.getElementById('lista-grupos');
+
+function insignia(texto, tipo) {
+  const colores = {
+    ok: 'background:#E3F3EC;color:#1F8A65;',
+    pendiente: 'background:#F7ECD9;color:#96650A;',
+    alerta: 'background:#FBE3E9;color:#cf2d56;',
+    neutro: 'background:#E6E5E0;color:#26251E;',
+  };
+  return `<span class="insignia" style="${colores[tipo]}">${texto}</span>`;
+}
+
+function resumenEntidad(entidad) {
+  if (entidad.alertas > 0) return insignia(`${entidad.alertas} con alerta`, 'alerta');
+  if (entidad.ok === entidad.total) return insignia(`Completo ${entidad.ok}/${entidad.total}`, 'ok');
+  return insignia(`En curso ${entidad.ok}/${entidad.total}`, 'pendiente');
+}
+
+function tarjetaStat(etiqueta, valor, color) {
+  return `
+    <div class="bg-white border-l-4 rounded-xl p-4" style="border-color:${color}">
+      <div class="text-xs uppercase tracking-wide text-[#807D72] mb-1">${etiqueta}</div>
+      <div class="text-2xl font-medium">${valor}</div>
+    </div>`;
+}
+
+async function actualizarPanorama() {
+  const carpetaRaiz = carpetaRaizInput.value.trim();
+  if (!carpetaRaiz) {
+    mensaje.textContent = 'Indica la carpeta raíz antes de actualizar.';
+    return;
+  }
+  mensaje.textContent = 'Buscando...';
+  tarjetasStats.classList.add('hidden');
+  listaGrupos.innerHTML = '';
+
+  const resp = await fetch(`/api/panorama?carpeta_raiz=${encodeURIComponent(carpetaRaiz)}`);
+  const datos = await resp.json();
+  const grupos = datos.grupos || [];
+
+  if (grupos.length === 0) {
+    mensaje.textContent = 'No se encontró ningún PDF de autorización (AUT_CONS_ANTEC.pdf) dentro de esa carpeta.';
+    return;
+  }
+  mensaje.textContent = '';
+
+  const totalPersonas = grupos.reduce((s, g) => s + (g.total_personas || 0), 0);
+  const sinPreparar = grupos.filter(g => !g.preparado).length;
+  const conAlerta = grupos.filter(g => g.entidades && Object.values(g.entidades).some(e => e.alertas > 0)).length;
+
+  tarjetasStats.innerHTML =
+    tarjetaStat('Postulantes / grupos', grupos.length, '#26251E') +
+    tarjetaStat('Personas en total', totalPersonas, '#807D72') +
+    tarjetaStat('Sin preparar todavía', sinPreparar, '#96650A') +
+    tarjetaStat('Con alguna alerta', conAlerta, '#cf2d56');
+  tarjetasStats.classList.remove('hidden');
+
+  for (const grupo of grupos) {
+    const tarjeta = document.createElement('div');
+    tarjeta.className = 'bg-white border border-[#E6E5E0] rounded-xl p-4 flex flex-col gap-2';
+
+    let contenido = `<div class="flex items-center justify-between">
+      <div class="font-medium text-sm">${grupo.nombre}</div>
+      <button class="btn-abrir-carpeta text-xs text-[#807D72] hover:text-[#26251E] hover:underline" data-ruta="${grupo.ruta}">Abrir carpeta</button>
+    </div>`;
+
+    if (!grupo.preparado) {
+      contenido += `<div class="text-xs text-[#807D72]">Sin preparar todavía (falta correr "Preparar personas").</div>`;
+    } else if (grupo.error) {
+      contenido += `<div class="text-xs text-[#cf2d56]">${grupo.error}</div>`;
+    } else {
+      let fila = `<div class="flex flex-wrap items-center gap-4 text-xs">
+        <span class="text-[#807D72]">${grupo.total_personas} persona(s)</span>`;
+      if (grupo.pendientes_revision > 0) {
+        fila += insignia(`${grupo.pendientes_revision} por revisar en el CSV`, 'alerta');
+      }
+      for (const entidad of Object.values(grupo.entidades)) {
+        fila += `<span class="flex items-center gap-1.5"><span class="text-[#807D72]">${entidad.etiqueta}</span>${resumenEntidad(entidad)}</span>`;
+      }
+      fila += `</div>`;
+      contenido += fila;
+    }
+
+    tarjeta.innerHTML = contenido;
+    listaGrupos.appendChild(tarjeta);
+    tarjeta.querySelector('.btn-abrir-carpeta').addEventListener('click', async (evento) => {
+      await fetch('/api/abrir-carpeta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ruta: evento.target.dataset.ruta }),
+      });
+    });
+  }
+}
+
+btnActualizar.addEventListener('click', actualizarPanorama);
+
+// --- Explorador de carpetas ---
+const modalExplorador = document.getElementById('modal-explorador');
+const rutaExplorador = document.getElementById('ruta-explorador');
+const listaExplorador = document.getElementById('lista-explorador');
+let carpetaSeleccionada = '';
+
+async function abrirExplorador(ruta) {
+  const resp = await fetch(`/api/navegar?ruta=${encodeURIComponent(ruta || '')}&extensiones=`);
+  const datos = await resp.json();
+  if (datos.error) {
+    alert(datos.error);
+    return;
+  }
+  carpetaSeleccionada = datos.ruta_actual;
+  rutaExplorador.textContent = datos.ruta_actual;
+  listaExplorador.innerHTML = '';
+
+  if (datos.ruta_padre) {
+    const fila = document.createElement('div');
+    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm text-[#807D72]';
+    fila.textContent = '.. (subir un nivel)';
+    fila.onclick = () => abrirExplorador(datos.ruta_padre);
+    listaExplorador.appendChild(fila);
+  }
+  for (const carpeta of datos.carpetas) {
+    const fila = document.createElement('div');
+    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm';
+    fila.textContent = carpeta;
+    fila.onclick = () => abrirExplorador(`${datos.ruta_actual}/${carpeta}`);
+    listaExplorador.appendChild(fila);
+  }
+}
+
+document.getElementById('btn-buscar-carpeta').addEventListener('click', () => {
+  modalExplorador.classList.remove('hidden');
+  abrirExplorador(carpetaRaizInput.value.trim());
+});
+document.getElementById('btn-cerrar-explorador').addEventListener('click', () => modalExplorador.classList.add('hidden'));
+document.getElementById('btn-usar-carpeta').addEventListener('click', () => {
+  carpetaRaizInput.value = carpetaSeleccionada;
+  modalExplorador.classList.add('hidden');
+});
+</script>
+{% endblock %}

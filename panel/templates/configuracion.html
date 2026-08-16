@@ -1,0 +1,83 @@
+{% extends "_base.html" %}
+{% block titulo %}Configuración{% endblock %}
+{% block encabezado %}Configuración{% endblock %}
+
+{% block contenido %}
+  <div class="h-full overflow-y-auto p-6 flex flex-col gap-5 max-w-2xl">
+    <p class="text-sm text-[#807D72] -mt-2">
+      Información real de diagnóstico del entorno donde corre el panel — no hay ajustes editables aquí
+      porque no hay ninguno que de verdad aplique a cómo funciona esta herramienta.
+    </p>
+
+    <div class="bg-white border border-[#E6E5E0] rounded-xl divide-y divide-[#E6E5E0]">
+      <div class="p-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-medium">Clave de 2Captcha</div>
+          <div class="text-xs text-[#807D72] mt-0.5">Usada por Contraloría, Procuraduría, Judicial y Delitos Sexuales para resolver el reCAPTCHA.</div>
+        </div>
+        <span id="estado-captcha" class="insignia shrink-0">Cargando...</span>
+      </div>
+      <div class="p-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-medium">Modelos de OCR (EasyOCR)</div>
+          <div class="text-xs text-[#807D72] mt-0.5">Se usan para leer cédulas escaneadas cuando el PDF no trae texto real.</div>
+        </div>
+        <span id="ruta-ocr" class="text-xs mono text-[#807D72] text-right shrink-0"></span>
+      </div>
+      <div class="p-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-medium">Python</div>
+          <div class="text-xs text-[#807D72] mt-0.5">Intérprete usado por el panel y los scripts de verificación.</div>
+        </div>
+        <span id="version-python" class="text-xs mono text-[#807D72] shrink-0"></span>
+      </div>
+      <div class="p-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-medium">PyTorch</div>
+          <div class="text-xs text-[#807D72] mt-0.5">Motor sobre el que corre EasyOCR (versión solo-CPU).</div>
+        </div>
+        <span id="version-torch" class="text-xs mono text-[#807D72] shrink-0"></span>
+      </div>
+      <div class="p-4 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-sm font-medium">Carpeta de scripts</div>
+          <div class="text-xs text-[#807D72] mt-0.5">Donde viven preparar_personas.py y los 5 automation_*.py.</div>
+        </div>
+        <span id="directorio-scripts" class="text-xs mono text-[#807D72] text-right break-all max-w-xs"></span>
+      </div>
+    </div>
+
+    <div class="bg-[#F7ECD9] text-[#96650A] rounded-xl p-4 text-sm">
+      Este panel corre completamente en tu equipo (dentro de WSL) y no tiene inicio de sesión propio.
+      No lo expongas fuera de <span class="mono">localhost</span> sin agregar antes autenticación real y
+      confirmar el visto bueno legal/de protección de datos — esto maneja cédulas y datos personales
+      de postulantes.
+    </div>
+  </div>
+{% endblock %}
+
+{% block script %}
+<script>
+async function cargarConfiguracion() {
+  const resp = await fetch('/api/configuracion');
+  const datos = await resp.json();
+
+  const estadoCaptcha = document.getElementById('estado-captcha');
+  if (datos.captcha_configurada) {
+    estadoCaptcha.textContent = `Configurada (${datos.captcha_clave_parcial})`;
+    estadoCaptcha.style.background = '#E3F3EC';
+    estadoCaptcha.style.color = '#1F8A65';
+  } else {
+    estadoCaptcha.textContent = 'No configurada';
+    estadoCaptcha.style.background = '#FBE3E9';
+    estadoCaptcha.style.color = '#cf2d56';
+  }
+
+  document.getElementById('ruta-ocr').textContent = datos.ruta_modelos_ocr;
+  document.getElementById('version-python').textContent = datos.version_python;
+  document.getElementById('version-torch').textContent = datos.version_torch;
+  document.getElementById('directorio-scripts').textContent = datos.directorio_scripts;
+}
+cargarConfiguracion();
+</script>
+{% endblock %}

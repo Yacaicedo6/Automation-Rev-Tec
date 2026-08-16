@@ -1,0 +1,219 @@
+{% extends "_base.html" %}
+{% block titulo %}Ejecutar verificaciones{% endblock %}
+{% block encabezado %}Ejecutar verificaciones{% endblock %}
+{% block encabezado_extra %}
+    <span id="estado-conexion" class="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[#E6E5E0] text-[#26251E]">
+      <span class="w-1.5 h-1.5 rounded-full bg-[#807D72]"></span> Sin iniciar
+    </span>
+{% endblock %}
+
+{% block estilos %}
+  #log-entries::-webkit-scrollbar { width: 8px; }
+  #log-entries::-webkit-scrollbar-thumb { background:#3a3830; border-radius:4px; }
+{% endblock %}
+
+{% block contenido %}
+  <div class="h-full grid grid-cols-1 lg:grid-cols-2">
+
+    <!-- Panel de control + logs -->
+    <section class="min-h-0 flex flex-col gap-3 p-4 border-r border-[#E6E5E0]">
+
+      <div class="shrink-0 bg-white border border-[#E6E5E0] rounded-xl p-4 flex flex-col gap-3">
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Archivo con los postulantes</label>
+          <div class="flex gap-2">
+            <input id="ruta-csv" type="text" placeholder="/mnt/e/... /personas_preparadas.csv"
+                   class="flex-1 min-w-0 border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs mono focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+            <button id="btn-buscar-archivo" type="button"
+                    class="border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs hover:bg-[#F7F7F4] transition-colors whitespace-nowrap shrink-0">
+              Buscar archivo...
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <span class="text-xs font-medium block mb-1.5 text-[#807D72] uppercase tracking-wide">Verificaciones a correr</span>
+          <div id="lista-verificaciones" class="flex flex-col gap-1 text-sm"></div>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="btn-iniciar"
+                  class="flex-1 bg-[#F54E00] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#D04200] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Iniciar
+          </button>
+          <button id="btn-detener" disabled
+                  class="flex-1 bg-white border border-[#cf2d56] text-[#cf2d56] rounded-lg py-2 text-sm font-medium hover:bg-[#FBE3E9] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:border-[#E6E5E0] disabled:text-[#807D72]">
+            Detener
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 min-h-0 bg-[#181d26] rounded-xl flex flex-col overflow-hidden">
+        <div class="shrink-0 px-3 py-2 border-b border-white/10 flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Registro en vivo
+        </div>
+        <div id="log-entries" class="flex-1 min-h-0 overflow-y-auto p-3 mono text-[12px] leading-relaxed text-white/90 space-y-0.5"></div>
+      </div>
+    </section>
+
+    <!-- Visor remoto del navegador (VNC embebido) -->
+    <section class="min-h-0 flex flex-col gap-2 p-4">
+      <div class="shrink-0">
+        <h2 class="text-xs font-medium uppercase tracking-wide text-[#807D72]">Navegador en vivo</h2>
+        <p class="text-xs text-[#807D72] mt-0.5">Si un portal pide resolver una pregunta de seguridad o corregir un error, hazlo directamente aquí.</p>
+      </div>
+      <div class="flex-1 min-h-0 border border-[#E6E5E0] rounded-xl overflow-hidden bg-black">
+        <iframe id="visor-vnc"
+                src="http://localhost:6080/vnc.html?host=localhost&port=6080&autoconnect=true&resize=scale"
+                class="w-full h-full block"></iframe>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Explorador de archivos (reemplaza el diálogo nativo, que no existe en un navegador) -->
+  <div id="modal-explorador" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
+      <div class="px-5 py-3 border-b border-[#E6E5E0] flex items-center justify-between">
+        <span class="font-medium text-sm">Selecciona el CSV</span>
+        <button id="btn-cerrar-explorador" class="text-[#807D72] hover:text-[#26251E]">✕</button>
+      </div>
+      <div id="ruta-explorador" class="px-5 py-2 text-xs mono text-[#807D72] border-b border-[#E6E5E0] break-all"></div>
+      <div id="lista-explorador" class="flex-1 overflow-y-auto p-2"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block script %}
+<script>
+const listaVerificaciones = document.getElementById('lista-verificaciones');
+const btnIniciar = document.getElementById('btn-iniciar');
+const btnDetener = document.getElementById('btn-detener');
+const rutaCsvInput = document.getElementById('ruta-csv');
+const logEntries = document.getElementById('log-entries');
+const estadoConexion = document.getElementById('estado-conexion');
+
+const btnBuscarArchivo = document.getElementById('btn-buscar-archivo');
+const modalExplorador = document.getElementById('modal-explorador');
+const btnCerrarExplorador = document.getElementById('btn-cerrar-explorador');
+const rutaExplorador = document.getElementById('ruta-explorador');
+const listaExplorador = document.getElementById('lista-explorador');
+
+let verificaciones = {};
+let cancelado = false;
+let wsActual = null;
+
+async function cargarVerificaciones() {
+  const resp = await fetch('/api/verificaciones');
+  verificaciones = await resp.json();
+  listaVerificaciones.innerHTML = '';
+  for (const [codigo, nombre] of Object.entries(verificaciones)) {
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-2';
+    label.innerHTML = `<input type="checkbox" value="${codigo}" checked class="rounded border-[#E6E5E0]"> ${nombre}`;
+    listaVerificaciones.appendChild(label);
+  }
+}
+
+function agregarLinea(texto) {
+  const linea = document.createElement('div');
+  linea.textContent = texto;
+  logEntries.appendChild(linea);
+  logEntries.scrollTop = logEntries.scrollHeight;
+}
+
+function marcarEstado(texto, color) {
+  estadoConexion.innerHTML = `<span class="w-1.5 h-1.5 rounded-full" style="background:${color}"></span> ${texto}`;
+}
+
+async function correrVerificacion(codigo, rutaCsv) {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://${location.host}/ws/ejecutar`);
+    wsActual = ws;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ codigo, ruta_csv: rutaCsv }));
+    };
+    ws.onmessage = (evento) => agregarLinea(evento.data);
+    ws.onclose = () => { wsActual = null; resolve(); };
+    ws.onerror = () => { wsActual = null; resolve(); };
+  });
+}
+
+btnIniciar.addEventListener('click', async () => {
+  const rutaCsv = rutaCsvInput.value.trim();
+  if (!rutaCsv) {
+    agregarLinea('ERROR: indica la ruta del CSV antes de iniciar.');
+    return;
+  }
+  const seleccionadas = Array.from(listaVerificaciones.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
+  if (seleccionadas.length === 0) return;
+
+  cancelado = false;
+  btnIniciar.disabled = true;
+  btnDetener.disabled = false;
+  marcarEstado('Corriendo...', '#F54E00');
+  logEntries.innerHTML = '';
+
+  for (const codigo of seleccionadas) {
+    if (cancelado) break;
+    await correrVerificacion(codigo, rutaCsv);
+  }
+
+  marcarEstado(cancelado ? 'Detenido' : 'Terminado', cancelado ? '#cf2d56' : '#1F8A65');
+  btnIniciar.disabled = false;
+  btnDetener.disabled = true;
+});
+
+btnDetener.addEventListener('click', async () => {
+  cancelado = true;
+  agregarLinea('--- Deteniendo, por favor espera... ---');
+  btnDetener.disabled = true;
+  await fetch('/api/detener', { method: 'POST' });
+});
+
+// --- Explorador de archivos ---
+async function abrirExplorador(ruta) {
+  const resp = await fetch(`/api/navegar?ruta=${encodeURIComponent(ruta || '')}`);
+  const datos = await resp.json();
+  if (datos.error) {
+    alert(datos.error);
+    return;
+  }
+  rutaExplorador.textContent = datos.ruta_actual;
+  listaExplorador.innerHTML = '';
+
+  if (datos.ruta_padre) {
+    const fila = document.createElement('div');
+    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm text-[#807D72]';
+    fila.textContent = '.. (subir un nivel)';
+    fila.onclick = () => abrirExplorador(datos.ruta_padre);
+    listaExplorador.appendChild(fila);
+  }
+  for (const carpeta of datos.carpetas) {
+    const fila = document.createElement('div');
+    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm';
+    fila.textContent = carpeta;
+    fila.onclick = () => abrirExplorador(`${datos.ruta_actual}/${carpeta}`);
+    listaExplorador.appendChild(fila);
+  }
+  for (const archivo of datos.archivos) {
+    const fila = document.createElement('div');
+    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#FBE3E9] cursor-pointer text-sm text-[#26251E] font-medium';
+    fila.textContent = archivo;
+    fila.onclick = () => {
+      rutaCsvInput.value = `${datos.ruta_actual}/${archivo}`;
+      modalExplorador.classList.add('hidden');
+    };
+    listaExplorador.appendChild(fila);
+  }
+}
+
+btnBuscarArchivo.addEventListener('click', () => {
+  modalExplorador.classList.remove('hidden');
+  abrirExplorador('');
+});
+btnCerrarExplorador.addEventListener('click', () => modalExplorador.classList.add('hidden'));
+
+cargarVerificaciones();
+</script>
+{% endblock %}

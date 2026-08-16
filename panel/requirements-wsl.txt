@@ -1,0 +1,32 @@
+# Dependencias del panel web, para instalar DENTRO de WSL (no en el venv de
+# Windows). Instalar con:
+#
+#   source ~/venv-rev-tec/bin/activate
+#   pip install -r requirements-wsl.txt
+#
+# torch y torchvision usan el índice de solo-CPU de PyTorch a propósito: sin
+# esto, pip descarga la versión con soporte CUDA completo (varios GB de
+# librerías de NVIDIA que no hacen falta, porque EasyOCR corre con
+# gpu=False). Las dos versiones deben venir del MISMO índice o dan error
+# "operator torchvision::nms does not exist" por incompatibilidad de build.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+torchvision==0.28.0+cpu
+
+# Backend del panel
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+jinja2==3.1.6
+python-multipart==0.0.32
+
+# Mismas dependencias que ya usan preparar_personas.py y los automation_*.py
+# (ver ../requirements.txt), instaladas también aquí porque el panel corre
+# en este entorno de WSL, separado del venv de Windows.
+selenium==4.47.0
+pandas==3.0.5
+2captcha-python==2.1.0
+python-dotenv==1.2.2
+PyPDF2==3.0.1
+pymupdf==1.28.2
+easyocr==1.7.2
+requests==2.34.2
