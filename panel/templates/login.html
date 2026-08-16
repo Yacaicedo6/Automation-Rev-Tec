@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ingresar — Revisión técnico-administrativa</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background:#F7F7F4; color:#26251E; }
+</style>
+</head>
+<body class="h-screen flex items-center justify-center">
+  <div class="w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="text-lg font-medium tracking-tight">Revisión técnico-administrativa</div>
+      <div class="text-xs text-[#807D72] mt-0.5">Alcaldía de Cali</div>
+    </div>
+    <form method="post" action="/login" class="bg-white border border-[#E6E5E0] rounded-xl p-6 flex flex-col gap-4">
+      {% if error %}
+      <div class="bg-[#FBE3E9] text-[#cf2d56] rounded-lg px-3 py-2 text-sm">{{ error }}</div>
+      {% endif %}
+      <div>
+        <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Usuario</label>
+        <input name="usuario" type="text" required autofocus
+               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+      </div>
+      <div>
+        <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Contraseña</label>
+        <input name="clave" type="password" required
+               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+      </div>
+      <button type="submit" class="bg-[#F54E00] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#D04200] transition-colors">
+        Ingresar
+      </button>
+    </form>
+    <p class="text-xs text-[#807D72] text-center mt-4">
+      ¿No tienes cuenta? <a href="/registro" class="text-[#F54E00] hover:underline">Créala aquí</a>.
+    </p>
+  </div>
+</body>
+</html>

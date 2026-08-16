@@ -6,6 +6,11 @@ env/
 # Archivos de variables de entorno
 .env
 
+# Cuentas del panel (solo quedan los hashes de las contraseñas, pero de
+# todas formas no van a git) y la clave para firmar las sesiones de login
+panel/usuarios.json
+panel/secret.key
+
 # Archivos compilados de Python
 __pycache__/
 *.pyc

@@ -28,14 +28,23 @@
       <a href="/preparar" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'preparar' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Preparar personas</a>
       <a href="/panorama" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'panorama' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Panorama general</a>
       <a href="/configuracion" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'configuracion' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Configuración</a>
+      {% if es_admin %}
+      <a href="/admin" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'admin' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Administración</a>
+      {% endif %}
     </nav>
-    <div class="p-4 border-t border-white/10">
+    <div class="p-4 border-t border-white/10 flex flex-col gap-3">
       <div class="bg-white/5 rounded-xl p-3">
         <div class="text-xs text-white/50 mb-1.5">Estado</div>
         <div class="flex items-center gap-2 text-xs text-white/80">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Panel activo, en tu equipo
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Panel activo, en la red del equipo
         </div>
       </div>
+      {% if usuario %}
+      <div class="flex items-center justify-between text-xs px-1">
+        <span class="text-white/60">Sesión: <span class="text-white font-medium">{{ usuario }}</span></span>
+        <a href="/logout" class="text-white/50 hover:text-white transition-colors">Salir</a>
+      </div>
+      {% endif %}
     </div>
   </aside>
 

@@ -1,0 +1,121 @@
+{% extends "_base.html" %}
+{% block titulo %}Administración{% endblock %}
+{% block encabezado %}Administración{% endblock %}
+
+{% block contenido %}
+  <div class="h-full overflow-y-auto p-6 flex flex-col gap-4 max-w-2xl">
+    <p class="text-sm text-[#807D72] -mt-2">
+      Cuentas del equipo. Cualquiera puede crear la suya propia desde la pantalla de registro --
+      esto es para cuando alguien olvide su contraseña, o para dar/quitar permisos de administrador.
+    </p>
+
+    <div id="tabla-usuarios" class="bg-white border border-[#E6E5E0] rounded-xl divide-y divide-[#E6E5E0]"></div>
+  </div>
+
+  <!-- Modal: restablecer contraseña -->
+  <div id="modal-restablecer" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-sm p-5 flex flex-col gap-3">
+      <div class="font-medium text-sm">Restablecer contraseña de <span id="usuario-restablecer"></span></div>
+      <input id="clave-nueva" type="password" placeholder="Contraseña nueva (mínimo 6 caracteres)"
+             class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+      <div class="flex gap-2 justify-end">
+        <button id="btn-cancelar-restablecer" class="px-4 py-1.5 text-sm rounded-lg border border-[#E6E5E0] hover:bg-[#F7F7F4]">Cancelar</button>
+        <button id="btn-confirmar-restablecer" class="px-4 py-1.5 text-sm rounded-lg bg-[#F54E00] text-white hover:bg-[#D04200]">Guardar</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block script %}
+<script>
+const usuarios = {{ usuarios | tojson }};
+const usuarioActual = {{ usuario | tojson }};
+const tabla = document.getElementById('tabla-usuarios');
+const modal = document.getElementById('modal-restablecer');
+const etiquetaUsuario = document.getElementById('usuario-restablecer');
+const claveNueva = document.getElementById('clave-nueva');
+let usuarioObjetivo = null;
+
+function dibujarTabla() {
+  tabla.innerHTML = '';
+  for (const u of usuarios) {
+    const fila = document.createElement('div');
+    fila.className = 'p-4 flex items-center justify-between gap-3';
+    fila.innerHTML = `
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-medium">${u.usuario}</span>
+        ${u.es_admin ? '<span class="insignia" style="background:#E3F3EC;color:#1F8A65;">Administrador</span>' : ''}
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <button class="btn-restablecer text-[#807D72] hover:text-[#26251E] hover:underline">Restablecer clave</button>
+        <button class="btn-toggle-admin text-[#807D72] hover:text-[#26251E] hover:underline">${u.es_admin ? 'Quitar admin' : 'Hacer admin'}</button>
+        ${u.usuario !== usuarioActual ? '<button class="btn-eliminar text-[#cf2d56] hover:underline">Eliminar</button>' : ''}
+      </div>
+    `;
+    fila.querySelector('.btn-restablecer').addEventListener('click', () => abrirRestablecer(u.usuario));
+    fila.querySelector('.btn-toggle-admin').addEventListener('click', () => alternarAdmin(u.usuario, !u.es_admin));
+    const btnEliminar = fila.querySelector('.btn-eliminar');
+    if (btnEliminar) btnEliminar.addEventListener('click', () => eliminarUsuario(u.usuario));
+    tabla.appendChild(fila);
+  }
+}
+
+function abrirRestablecer(usuario) {
+  usuarioObjetivo = usuario;
+  etiquetaUsuario.textContent = usuario;
+  claveNueva.value = '';
+  modal.classList.remove('hidden');
+}
+
+document.getElementById('btn-cancelar-restablecer').addEventListener('click', () => modal.classList.add('hidden'));
+document.getElementById('btn-confirmar-restablecer').addEventListener('click', async () => {
+  if (claveNueva.value.length < 6) {
+    alert('La contraseña debe tener al menos 6 caracteres.');
+    return;
+  }
+  const resp = await fetch('/api/admin/restablecer-clave', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario: usuarioObjetivo, clave: claveNueva.value }),
+  });
+  const datos = await resp.json();
+  if (datos.error) {
+    alert(datos.error);
+    return;
+  }
+  modal.classList.add('hidden');
+  alert(`Contraseña de '${usuarioObjetivo}' actualizada.`);
+});
+
+async function alternarAdmin(usuario, esAdmin) {
+  const resp = await fetch('/api/admin/hacer-admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario, es_admin: esAdmin }),
+  });
+  const datos = await resp.json();
+  if (datos.error) {
+    alert(datos.error);
+    return;
+  }
+  location.reload();
+}
+
+async function eliminarUsuario(usuario) {
+  if (!confirm(`¿Eliminar la cuenta de '${usuario}'? No se puede deshacer.`)) return;
+  const resp = await fetch('/api/admin/eliminar-usuario', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario }),
+  });
+  const datos = await resp.json();
+  if (datos.error) {
+    alert(datos.error);
+    return;
+  }
+  location.reload();
+}
+
+dibujarTabla();
+</script>
+{% endblock %}

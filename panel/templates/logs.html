@@ -62,10 +62,11 @@
         <h2 class="text-xs font-medium uppercase tracking-wide text-[#807D72]">Navegador en vivo</h2>
         <p class="text-xs text-[#807D72] mt-0.5">Si un portal pide resolver una pregunta de seguridad o corregir un error, hazlo directamente aquí.</p>
       </div>
-      <div class="flex-1 min-h-0 border border-[#E6E5E0] rounded-xl overflow-hidden bg-black">
-        <iframe id="visor-vnc"
-                src="http://localhost:6080/vnc.html?host=localhost&port=6080&autoconnect=true&resize=scale"
-                class="w-full h-full block"></iframe>
+      <div class="flex-1 min-h-0 border border-[#E6E5E0] rounded-xl overflow-hidden bg-black flex items-center justify-center">
+        <div id="visor-vacio" class="text-center text-white/40 text-sm px-6">
+          Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.
+        </div>
+        <iframe id="visor-vnc" class="hidden w-full h-full block"></iframe>
       </div>
     </section>
 
@@ -92,6 +93,8 @@ const btnDetener = document.getElementById('btn-detener');
 const rutaCsvInput = document.getElementById('ruta-csv');
 const logEntries = document.getElementById('log-entries');
 const estadoConexion = document.getElementById('estado-conexion');
+const visorVacio = document.getElementById('visor-vacio');
+const visorVnc = document.getElementById('visor-vnc');
 
 const btnBuscarArchivo = document.getElementById('btn-buscar-archivo');
 const modalExplorador = document.getElementById('modal-explorador');
@@ -102,6 +105,20 @@ const listaExplorador = document.getElementById('lista-explorador');
 let verificaciones = {};
 let cancelado = false;
 let wsActual = null;
+
+function mostrarVisor(puertoVnc) {
+  const host = location.hostname;
+  visorVnc.src = `http://${host}:${puertoVnc}/vnc.html?host=${host}&port=${puertoVnc}&autoconnect=true&resize=scale`;
+  visorVnc.classList.remove('hidden');
+  visorVacio.classList.add('hidden');
+}
+
+function ocultarVisor(mensaje) {
+  visorVnc.src = '';
+  visorVnc.classList.add('hidden');
+  visorVacio.textContent = mensaje;
+  visorVacio.classList.remove('hidden');
+}
 
 async function cargarVerificaciones() {
   const resp = await fetch('/api/verificaciones');
@@ -133,7 +150,20 @@ async function correrVerificacion(codigo, rutaCsv) {
     ws.onopen = () => {
       ws.send(JSON.stringify({ codigo, ruta_csv: rutaCsv }));
     };
-    ws.onmessage = (evento) => agregarLinea(evento.data);
+    ws.onmessage = (evento) => {
+      const mensaje = JSON.parse(evento.data);
+      if (mensaje.tipo === 'espera') {
+        marcarEstado(`Esperando cupo (posición ${mensaje.posicion})...`, '#96650A');
+        ocultarVisor(`Esperando que se libere un cupo... (posición ${mensaje.posicion} en la fila)`);
+      } else if (mensaje.tipo === 'cupo') {
+        marcarEstado('Corriendo...', '#F54E00');
+        mostrarVisor(mensaje.puerto_vnc);
+      } else if (mensaje.tipo === 'log') {
+        agregarLinea(mensaje.texto);
+      } else if (mensaje.tipo === 'fin') {
+        agregarLinea(`=== ${mensaje.estado === 'completado' ? 'Completado' : mensaje.estado === 'detenido' ? 'Detenido por el usuario' : 'Terminó con errores'} ===`);
+      }
+    };
     ws.onclose = () => { wsActual = null; resolve(); };
     ws.onerror = () => { wsActual = null; resolve(); };
   });
@@ -160,6 +190,7 @@ btnIniciar.addEventListener('click', async () => {
   }
 
   marcarEstado(cancelado ? 'Detenido' : 'Terminado', cancelado ? '#cf2d56' : '#1F8A65');
+  ocultarVisor(`Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.`);
   btnIniciar.disabled = false;
   btnDetener.disabled = true;
 });
