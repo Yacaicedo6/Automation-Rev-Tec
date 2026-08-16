@@ -53,18 +53,41 @@ foreach ($puerto in $puertos) {
     Remove-NetFirewallRule -DisplayName $nombreRegla -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $nombreRegla -Direction Inbound -Protocol TCP -LocalPort $puerto -Action Allow -Profile Private | Out-Null
 
+    # Regla aparte para Tailscale: solo deja pasar tráfico que venga
+    # realmente de la red privada de Tailscale (su rango de direcciones
+    # 100.64.0.0/10), sin importar cómo Windows clasifique esa red
+    # (normalmente la marca como "pública", y no queremos abrir esa
+    # categoría en general -- solo el tráfico que sí es de Tailscale).
+    $nombreReglaTailscale = "Panel Rev-Tec Tailscale - puerto $puerto"
+    Remove-NetFirewallRule -DisplayName $nombreReglaTailscale -ErrorAction SilentlyContinue
+    New-NetFirewallRule -DisplayName $nombreReglaTailscale -Direction Inbound -Protocol TCP -LocalPort $puerto -RemoteAddress "100.64.0.0/10" -Action Allow -Profile Any | Out-Null
+
     Write-Host "  Puerto $puerto -> WSL ($ipWSL)"
 }
 
 $ipWindows = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet|WSL" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1 -ExpandProperty IPAddress)
+
+$ipTailscale = $null
+try {
+    $ipTailscale = (& tailscale ip -4 2>$null | Select-Object -First 1)
+} catch {
+    $ipTailscale = $null
+}
 
 Write-Host ""
 Write-Host "===================================================="
 Write-Host "Listo. Tus compañeros, desde la misma red, ya pueden entrar a:"
 Write-Host "    http://${ipWindows}:8600"
 Write-Host ""
+if ($ipTailscale) {
+    Write-Host "Y desde fuera de la oficina, con Tailscale instalado y conectado"
+    Write-Host "a esta misma tailnet, pueden entrar a:"
+    Write-Host "    http://${ipTailscale}:8600"
+    Write-Host ""
+}
 Write-Host "Nota: las reglas de firewall que se crearon solo permiten redes"
 Write-Host "'privadas' (perfil Private) -- si tu red de Windows está marcada"
 Write-Host "como 'pública', cámbiala a privada en Configuración de Windows"
-Write-Host "para que esto funcione."
+Write-Host "para que esto funcione. El tráfico de Tailscale usa una regla"
+Write-Host "aparte y no depende de este ajuste."
 Write-Host "===================================================="

@@ -50,9 +50,9 @@ for i in $(seq 1 "$MAX_SESIONES_PARALELAS"); do
     echo "Cupo $i: pantalla :$i, VNC puerto $VNC_PORT, visor web puerto $WS_PORT..."
 
     export DISPLAY=":$i"
-    Xvfb ":$i" -screen 0 1280x800x24 &
+    Xvfb ":$i" -screen 0 1280x800x24 > /dev/null 2>&1 &
     sleep 0.5
-    fluxbox &
+    fluxbox > /dev/null 2>&1 &
     sleep 0.5
     unset WAYLAND_DISPLAY
     x11vnc -display ":$i" -nopw -shared -forever -rfbport "$VNC_PORT" > /dev/null 2>&1 &

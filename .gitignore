@@ -11,6 +11,10 @@ env/
 panel/usuarios.json
 panel/secret.key
 
+# Accesos directos de Windows creados localmente (rutas absolutas propias
+# de cada equipo, no tiene sentido llevarlos a git)
+*.lnk
+
 # Archivos compilados de Python
 __pycache__/
 *.pyc
