@@ -36,6 +36,12 @@ for ($i = 1; $i -le $maxSesiones; $i++) {
     $puertos += (6079 + $i)
 }
 
+# Rango de direcciones de la red de ZeroTier "REV_TEC_ADMIN"
+# (id 08752e18b1177ed7). Si algún día se crea una red nueva de ZeroTier,
+# hay que actualizar este valor con el nuevo rango (se ve en
+# my.zerotier.com, en la sección "IPv4 Assignment" de la red).
+$subredZeroTier = "10.22.202.0/24"
+
 $ipWSL = (wsl hostname -I).Trim().Split(" ")[0]
 if (-not $ipWSL) {
     Write-Host "No se pudo obtener la IP de WSL. ¿Ya corriste 'source panel/iniciar.sh' dentro de WSL?" -ForegroundColor Red
@@ -62,17 +68,29 @@ foreach ($puerto in $puertos) {
     Remove-NetFirewallRule -DisplayName $nombreReglaTailscale -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $nombreReglaTailscale -Direction Inbound -Protocol TCP -LocalPort $puerto -RemoteAddress "100.64.0.0/10" -Action Allow -Profile Any | Out-Null
 
+    # Lo mismo, pero para la red de ZeroTier.
+    $nombreReglaZeroTier = "Panel Rev-Tec ZeroTier - puerto $puerto"
+    Remove-NetFirewallRule -DisplayName $nombreReglaZeroTier -ErrorAction SilentlyContinue
+    New-NetFirewallRule -DisplayName $nombreReglaZeroTier -Direction Inbound -Protocol TCP -LocalPort $puerto -RemoteAddress $subredZeroTier -Action Allow -Profile Any | Out-Null
+
     Write-Host "  Puerto $puerto -> WSL ($ipWSL)"
 }
 
-$ipWindows = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet|WSL" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1 -ExpandProperty IPAddress)
+$ipWindows = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet|WSL|ZeroTier|Tailscale" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1 -ExpandProperty IPAddress)
 
 $ipTailscale = $null
+$rutaTailscale = "C:\Program Files\Tailscale\tailscale.exe"
 try {
-    $ipTailscale = (& tailscale ip -4 2>$null | Select-Object -First 1)
+    if (Get-Command tailscale -ErrorAction SilentlyContinue) {
+        $ipTailscale = (& tailscale ip -4 2>$null | Select-Object -First 1)
+    } elseif (Test-Path $rutaTailscale) {
+        $ipTailscale = (& $rutaTailscale ip -4 2>$null | Select-Object -First 1)
+    }
 } catch {
     $ipTailscale = $null
 }
+
+$ipZeroTier = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "*ZeroTier*" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty IPAddress)
 
 Write-Host ""
 Write-Host "===================================================="
@@ -85,9 +103,15 @@ if ($ipTailscale) {
     Write-Host "    http://${ipTailscale}:8600"
     Write-Host ""
 }
+if ($ipZeroTier) {
+    Write-Host "Y desde fuera de la oficina, con ZeroTier instalado y unido a"
+    Write-Host "la red REV_TEC_ADMIN, pueden entrar a:"
+    Write-Host "    http://${ipZeroTier}:8600"
+    Write-Host ""
+}
 Write-Host "Nota: las reglas de firewall que se crearon solo permiten redes"
 Write-Host "'privadas' (perfil Private) -- si tu red de Windows está marcada"
 Write-Host "como 'pública', cámbiala a privada en Configuración de Windows"
-Write-Host "para que esto funcione. El tráfico de Tailscale usa una regla"
-Write-Host "aparte y no depende de este ajuste."
+Write-Host "para que esto funcione. El tráfico de Tailscale y ZeroTier usa"
+Write-Host "reglas aparte y no depende de este ajuste."
 Write-Host "===================================================="
