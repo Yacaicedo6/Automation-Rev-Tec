@@ -18,25 +18,79 @@ servidor dedicado.
 """
 import asyncio
 import bcrypt
+import io
 import os
+import re
 import secrets
 import shutil
-import subprocess
 import sys
+import zipfile
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
-from fastapi import Body, FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi import Body, FastAPI, File, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 DIRECTORIO_PANEL = Path(__file__).resolve().parent.parent
 DIRECTORIO_SCRIPTS = DIRECTORIO_PANEL.parent
-# Raíz por defecto del explorador: donde viven las carpetas de cada
-# convocatoria (REV_TEC_ADM_...), no la del proyecto en sí.
-RAIZ_EXPLORADOR = DIRECTORIO_SCRIPTS.parent
+
+# Cada persona del equipo tiene su propio espacio, aislado del de los
+# demás: nadie navega la carpeta de otro, ni siquiera un administrador
+# desde la app. Todo lo que alguien sube (PDFs) y todo lo que se genera
+# (CSV, certificados descargados) vive solo dentro de su propia carpeta.
+ESPACIOS_USUARIO = DIRECTORIO_PANEL / "espacios_usuario"
+ESPACIOS_USUARIO.mkdir(exist_ok=True)
+
+
+def _sanear_nombre(nombre: str, longitud_maxima: int = 80) -> str:
+    """Deja solo letras, números, espacios, guiones y guion bajo. Así ni el
+    usuario ni el nombre de un lote pueden convertirse en una ruta
+    (por ejemplo '../../secret.key')."""
+    nombre = re.sub(r"[^A-Za-z0-9 _\-]", "", (nombre or "")).strip()
+    nombre = re.sub(r"\s+", " ", nombre)
+    return nombre[:longitud_maxima]
+
+
+def _carpeta_usuario(usuario: str) -> Path:
+    carpeta = ESPACIOS_USUARIO / _sanear_nombre(usuario)
+    carpeta.mkdir(parents=True, exist_ok=True)
+    return carpeta
+
+
+def _carpeta_lote(usuario: str, nombre_lote: str, crear: bool = False) -> Optional[Path]:
+    nombre_seguro = _sanear_nombre(nombre_lote)
+    if not nombre_seguro:
+        return None
+    carpeta = _carpeta_usuario(usuario) / nombre_seguro
+    if crear:
+        carpeta.mkdir(parents=True, exist_ok=True)
+    return carpeta
+
+
+def _lote_existente(usuario: str, nombre_lote: str) -> Optional[Path]:
+    carpeta = _carpeta_lote(usuario, nombre_lote)
+    if carpeta is None or not carpeta.is_dir():
+        return None
+    return carpeta
+
+
+def _archivo_seguro_en_lote(carpeta_lote: Path, ruta_relativa: str) -> Optional[Path]:
+    """Resuelve un nombre de archivo dentro de un lote, sin dejar que se
+    escape de esa carpeta (../../ etc)."""
+    try:
+        destino = (carpeta_lote / ruta_relativa).resolve()
+    except (OSError, RuntimeError):
+        return None
+    raiz = carpeta_lote.resolve()
+    if destino != raiz and raiz not in destino.parents:
+        return None
+    return destino if destino.is_file() else None
+
 
 sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
 sys.path.insert(0, str(DIRECTORIO_PANEL))
@@ -87,6 +141,7 @@ VERIFICACIONES = {
 
 app = FastAPI(title="Panel de revisión técnico-administrativa")
 app.add_middleware(SessionMiddleware, secret_key=CLAVE_SECRETA, max_age=60 * 60 * 12)
+app.mount("/static", StaticFiles(directory=str(DIRECTORIO_PANEL / "static")), name="static")
 
 
 # ==========================================
@@ -188,16 +243,32 @@ def pagina_registro(request: Request):
     return plantillas.TemplateResponse(request, "registro.html", {})
 
 
+@app.get("/terminos")
+def pagina_terminos(request: Request):
+    return plantillas.TemplateResponse(request, "terminos.html", {})
+
+
 @app.post("/registro")
 async def procesar_registro(request: Request):
     datos = await request.form()
     usuario = str(datos.get("usuario", "")).strip()
     clave = str(datos.get("clave", ""))
     confirmacion = str(datos.get("confirmacion", ""))
+    nombres = str(datos.get("nombres", "")).strip()
+    apellidos = str(datos.get("apellidos", "")).strip()
+    identificacion = str(datos.get("identificacion", "")).strip()
+    correo = str(datos.get("correo", "")).strip()
+    celular = str(datos.get("celular", "")).strip()
+    acepto_terminos = datos.get("acepto_terminos") == "on"
+
+    valores_previos = {
+        "usuario_previo": usuario, "nombres_previo": nombres, "apellidos_previo": apellidos,
+        "identificacion_previa": identificacion, "correo_previo": correo, "celular_previo": celular,
+    }
 
     def _error(mensaje):
         return plantillas.TemplateResponse(
-            request, "registro.html", {"error": mensaje, "usuario_previo": usuario}, status_code=400,
+            request, "registro.html", {"error": mensaje, **valores_previos}, status_code=400,
         )
 
     if not usuario or len(usuario) < 3:
@@ -206,13 +277,28 @@ async def procesar_registro(request: Request):
         return _error("La contraseña debe tener al menos 6 caracteres.")
     if clave != confirmacion:
         return _error("Las contraseñas no coinciden.")
+    if not nombres or not apellidos or not identificacion or not correo or not celular:
+        return _error("Completa nombres, apellidos, identificación, correo y celular.")
+    if "@" not in correo:
+        return _error("El correo no parece válido.")
+    if not acepto_terminos:
+        return _error("Debes aceptar los términos de uso para crear la cuenta.")
 
     usuarios = gu._cargar()
     if usuario in usuarios:
         return _error(f"El usuario '{usuario}' ya existe. Elige otro, o entra si ya es tuyo.")
 
     hash_clave = bcrypt.hashpw(clave.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    usuarios[usuario] = {"hash": hash_clave, "es_admin": False}
+    usuarios[usuario] = {
+        "hash": hash_clave,
+        "es_admin": False,
+        "nombres": nombres,
+        "apellidos": apellidos,
+        "identificacion": identificacion,
+        "correo": correo,
+        "celular": celular,
+        "acepto_terminos": True,
+    }
     gu._guardar(usuarios)
 
     request.session["usuario"] = usuario
@@ -231,7 +317,15 @@ def pagina_admin(request: Request):
         return RedirectResponse("/", status_code=303)
 
     usuarios = gu._cargar()
-    lista = [{"usuario": u, "es_admin": d.get("es_admin", False)} for u, d in usuarios.items()]
+    lista = [
+        {
+            "usuario": u,
+            "es_admin": d.get("es_admin", False),
+            "nombre_completo": f"{d.get('nombres', '')} {d.get('apellidos', '')}".strip(),
+            "correo": d.get("correo", ""),
+        }
+        for u, d in usuarios.items()
+    ]
     return plantillas.TemplateResponse(request, "admin.html", {
         "pagina_activa": "admin", "usuario": usuario, "es_admin": True, "usuarios": lista,
     })
@@ -308,7 +402,7 @@ def pagina_logs(request: Request):
     usuario, redireccion = _pagina_o_login(request)
     if redireccion:
         return redireccion
-    return plantillas.TemplateResponse(request, "logs.html", {
+    return plantillas.TemplateResponse(request, "verificaciones.html", {
         "pagina_activa": "verificaciones", "usuario": usuario, "es_admin": _es_admin(usuario),
         "max_sesiones": MAX_SESIONES_PARALELAS,
     })
@@ -339,9 +433,61 @@ def pagina_configuracion(request: Request):
     usuario, redireccion = _pagina_o_login(request)
     if redireccion:
         return redireccion
+    datos_usuario = gu._cargar().get(usuario, {})
     return plantillas.TemplateResponse(request, "configuracion.html", {
         "pagina_activa": "configuracion", "usuario": usuario, "es_admin": _es_admin(usuario),
+        "mis_datos": {
+            "nombres": datos_usuario.get("nombres", ""),
+            "apellidos": datos_usuario.get("apellidos", ""),
+            "correo": datos_usuario.get("correo", ""),
+            "celular": datos_usuario.get("celular", ""),
+        },
     })
+
+
+@app.post("/api/mi-perfil")
+def actualizar_mi_perfil(request: Request, datos: dict = Body(...)):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    nombres = (datos.get("nombres") or "").strip()
+    apellidos = (datos.get("apellidos") or "").strip()
+    correo = (datos.get("correo") or "").strip()
+    celular = (datos.get("celular") or "").strip()
+
+    if not nombres or not apellidos or not correo or not celular:
+        return JSONResponse({"error": "Completa nombres, apellidos, correo y celular."}, status_code=400)
+    if "@" not in correo:
+        return JSONResponse({"error": "El correo no parece válido."}, status_code=400)
+
+    usuarios = gu._cargar()
+    usuarios[usuario].update({"nombres": nombres, "apellidos": apellidos, "correo": correo, "celular": celular})
+    gu._guardar(usuarios)
+    return {"actualizado": True}
+
+
+@app.post("/api/mi-clave")
+def cambiar_mi_clave(request: Request, datos: dict = Body(...)):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    clave_actual = datos.get("clave_actual") or ""
+    clave_nueva = datos.get("clave_nueva") or ""
+    confirmacion = datos.get("confirmacion") or ""
+
+    if not _verificar_clave(usuario, clave_actual):
+        return JSONResponse({"error": "Tu contraseña actual no es correcta."}, status_code=403)
+    if len(clave_nueva) < 6:
+        return JSONResponse({"error": "La contraseña nueva debe tener al menos 6 caracteres."}, status_code=400)
+    if clave_nueva != confirmacion:
+        return JSONResponse({"error": "Las contraseñas no coinciden."}, status_code=400)
+
+    usuarios = gu._cargar()
+    usuarios[usuario]["hash"] = bcrypt.hashpw(clave_nueva.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    gu._guardar(usuarios)
+    return {"actualizado": True}
 
 
 # ==========================================
@@ -355,66 +501,102 @@ def listar_verificaciones(request: Request):
     return {codigo: nombre for codigo, (nombre, _) in VERIFICACIONES.items()}
 
 
-@app.get("/api/navegar")
-def navegar_carpetas(request: Request, ruta: str = "", extensiones: str = "csv"):
-    _, error = _api_o_401(request)
+@app.get("/api/mis-lotes")
+def listar_mis_lotes(request: Request):
+    usuario, error = _api_o_401(request)
     if error:
         return error
 
-    ruta_actual = Path(ruta) if ruta else RAIZ_EXPLORADOR
-    if not ruta_actual.is_dir():
-        return JSONResponse({"error": f"No es una carpeta válida: {ruta_actual}"}, status_code=400)
+    lotes = []
+    for carpeta in sorted(_carpeta_usuario(usuario).iterdir(), key=lambda p: p.name.lower()):
+        if not carpeta.is_dir():
+            continue
+        ruta_csv = carpeta / "personas_preparadas.csv"
+        ruta_pdf = carpeta / "AUT_CONS_ANTEC.pdf"
+        total_personas = None
+        if ruta_csv.is_file():
+            try:
+                total_personas = len(pd.read_csv(ruta_csv, dtype={"DOC": str}))
+            except Exception:
+                total_personas = None
 
-    exts_permitidas = {f".{e.strip().lower().lstrip('.')}" for e in extensiones.split(",") if e.strip()}
+        # Para "Ejecutar verificaciones": si ya hay CSV preparado se usa ese
+        # (trae las correcciones manuales); si no, se puede correr directo
+        # sobre el PDF de autorización -- los scripts saben leer cualquiera.
+        if ruta_csv.is_file():
+            archivo_para_verificar = ruta_csv.name
+        elif ruta_pdf.is_file():
+            archivo_para_verificar = ruta_pdf.name
+        else:
+            archivo_para_verificar = None
 
-    carpetas = []
-    archivos = []
-    try:
-        for item in sorted(ruta_actual.iterdir(), key=lambda p: p.name.lower()):
-            if item.is_dir():
-                carpetas.append(item.name)
-            elif item.suffix.lower() in exts_permitidas:
-                archivos.append(item.name)
-    except PermissionError:
-        pass
-
-    ruta_padre = str(ruta_actual.parent) if ruta_actual != ruta_actual.parent else None
-
-    return {
-        "ruta_actual": str(ruta_actual),
-        "ruta_padre": ruta_padre,
-        "carpetas": carpetas,
-        "archivos": archivos,
-    }
-
-
-def _a_ruta_windows(ruta_wsl):
-    """Convierte una ruta tipo /mnt/e/algo a E:\\algo, para poder abrirla en
-    el Explorador de Windows desde este backend que corre en WSL."""
-    partes = Path(ruta_wsl).parts
-    if len(partes) >= 3 and partes[0] == "/" and partes[1] == "mnt" and len(partes[2]) == 1:
-        letra = partes[2].upper()
-        resto = "\\".join(partes[3:])
-        return f"{letra}:\\{resto}" if resto else f"{letra}:\\"
-    return ruta_wsl
+        lotes.append({
+            "nombre_lote": carpeta.name,
+            "tiene_csv": ruta_csv.is_file(),
+            "total_personas": total_personas,
+            "tiene_autorizacion": ruta_pdf.is_file(),
+            "archivo_para_verificar": archivo_para_verificar,
+        })
+    return {"lotes": lotes}
 
 
-@app.post("/api/abrir-carpeta")
-def abrir_carpeta(request: Request, datos: dict = Body(...)):
-    _, error = _api_o_401(request)
+@app.get("/api/lote/{nombre_lote}/archivos")
+def listar_archivos_lote(request: Request, nombre_lote: str):
+    usuario, error = _api_o_401(request)
     if error:
         return error
 
-    ruta = (datos.get("ruta") or "").strip()
-    if not ruta or not os.path.isdir(ruta):
-        return JSONResponse({"error": f"No es una carpeta válida: {ruta}"}, status_code=400)
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
 
-    ruta_windows = _a_ruta_windows(ruta)
-    try:
-        subprocess.Popen(["explorer.exe", ruta_windows])
-        return {"abierta": True}
-    except Exception as error:
-        return JSONResponse({"error": str(error)}, status_code=500)
+    archivos = [
+        {"ruta_relativa": str(ruta.relative_to(carpeta_lote)), "tamano_kb": round(ruta.stat().st_size / 1024, 1)}
+        for ruta in sorted(carpeta_lote.rglob("*"))
+        if ruta.is_file()
+    ]
+    return {"nombre_lote": carpeta_lote.name, "archivos": archivos}
+
+
+@app.get("/api/lote/{nombre_lote}/descargar")
+def descargar_archivo_lote(request: Request, nombre_lote: str, archivo: str):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    ruta_archivo = _archivo_seguro_en_lote(carpeta_lote, archivo)
+    if ruta_archivo is None:
+        return JSONResponse({"error": "Archivo no encontrado."}, status_code=404)
+
+    return FileResponse(ruta_archivo, filename=ruta_archivo.name)
+
+
+@app.get("/api/lote/{nombre_lote}/descargar-zip")
+def descargar_zip_lote(request: Request, nombre_lote: str):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_archivo:
+        for ruta in carpeta_lote.rglob("*"):
+            if ruta.is_file():
+                zip_archivo.write(ruta, arcname=str(ruta.relative_to(carpeta_lote)))
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{carpeta_lote.name}.zip"'},
+    )
 
 
 ENTIDADES = [
@@ -426,16 +608,9 @@ ENTIDADES = [
 ]
 
 
-def _buscar_grupos(carpeta_raiz):
-    raiz = Path(carpeta_raiz)
-    if not raiz.is_dir():
-        return []
-    return sorted({ruta.parent for ruta in raiz.rglob("AUT_CONS_ANTEC.pdf")})
-
-
-def _estado_persona(carpeta_grupo, codigo, doc):
-    carpeta_normal = carpeta_grupo / f"Cert_{codigo}"
-    carpeta_alerta = carpeta_grupo / f"Cert_{codigo}_INHABILITADOS"
+def _estado_persona(carpeta_lote, codigo, doc):
+    carpeta_normal = carpeta_lote / f"Cert_{codigo}"
+    carpeta_alerta = carpeta_lote / f"Cert_{codigo}_INHABILITADOS"
 
     if carpeta_alerta.is_dir():
         for archivo in carpeta_alerta.glob("*.pdf"):
@@ -448,50 +623,81 @@ def _estado_persona(carpeta_grupo, codigo, doc):
     return "pendiente"
 
 
+def _nombre_persona(fila):
+    partes = [
+        str(fila.get("PRIMER_NOMBRE", "") or "").strip(),
+        str(fila.get("SEGUNDO_NOMBRE", "") or "").strip(),
+        str(fila.get("PRIMER_APELLIDO", "") or "").strip(),
+        str(fila.get("SEGUNDO_APELLIDO", "") or "").strip(),
+    ]
+    nombre = " ".join(p for p in partes if p)
+    return nombre or str(fila.get("DOC", ""))
+
+
+def _info_lote_panorama(carpeta_lote, propietario):
+    ruta_csv = carpeta_lote / "personas_preparadas.csv"
+    item = {
+        "nombre": carpeta_lote.name,
+        "propietario": propietario,
+        "preparado": ruta_csv.is_file(),
+    }
+
+    if ruta_csv.is_file():
+        try:
+            df_grupo = pd.read_csv(ruta_csv, dtype={"DOC": str}).fillna("")
+            pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
+
+            entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in ENTIDADES}
+            personas = []
+            for _, fila in df_grupo.iterrows():
+                doc = str(fila["DOC"])
+                estados_persona = {}
+                for codigo, _etiqueta in ENTIDADES:
+                    estado = _estado_persona(carpeta_lote, codigo, doc)
+                    estados_persona[codigo] = estado
+                    entidades[codigo]["total"] += 1
+                    if estado == "ok":
+                        entidades[codigo]["ok"] += 1
+                    elif estado == "alerta":
+                        entidades[codigo]["alertas"] += 1
+                personas.append({"doc": doc, "nombre": _nombre_persona(fila), "estados": estados_persona})
+
+            item.update({
+                "total_personas": len(df_grupo),
+                "pendientes_revision": pendientes_revision,
+                "entidades": entidades,
+                "personas": personas,
+            })
+        except Exception as error:
+            item["error"] = f"No se pudo leer personas_preparadas.csv: {error}"
+
+    return item
+
+
 @app.get("/api/panorama")
-def obtener_panorama(request: Request, carpeta_raiz: str):
-    _, error = _api_o_401(request)
+def obtener_panorama(request: Request):
+    usuario, error = _api_o_401(request)
     if error:
         return error
 
-    grupos = _buscar_grupos(carpeta_raiz)
-    resultado = []
+    grupos = []
+    if _es_admin(usuario):
+        # El administrador ve el progreso de todo el equipo, un lote de
+        # cada quien a la vez -- pero esto es solo un resumen (nombres y
+        # cifras), no un explorador de archivos: no se navegan ni se abren
+        # los archivos de otra persona desde aquí.
+        for carpeta_usuario in sorted(ESPACIOS_USUARIO.iterdir(), key=lambda p: p.name.lower()):
+            if not carpeta_usuario.is_dir():
+                continue
+            for carpeta_lote in sorted(carpeta_usuario.iterdir(), key=lambda p: p.name.lower()):
+                if carpeta_lote.is_dir():
+                    grupos.append(_info_lote_panorama(carpeta_lote, carpeta_usuario.name))
+    else:
+        for carpeta_lote in sorted(_carpeta_usuario(usuario).iterdir(), key=lambda p: p.name.lower()):
+            if carpeta_lote.is_dir():
+                grupos.append(_info_lote_panorama(carpeta_lote, usuario))
 
-    for carpeta_grupo in grupos:
-        ruta_csv = carpeta_grupo / "personas_preparadas.csv"
-        item = {
-            "nombre": carpeta_grupo.name,
-            "ruta": str(carpeta_grupo),
-            "preparado": ruta_csv.is_file(),
-        }
-
-        if ruta_csv.is_file():
-            try:
-                df_grupo = pd.read_csv(ruta_csv, dtype={"DOC": str})
-                documentos = list(df_grupo["DOC"])
-                pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
-
-                entidades = {}
-                for codigo, etiqueta in ENTIDADES:
-                    estados = [_estado_persona(carpeta_grupo, codigo, doc) for doc in documentos]
-                    entidades[codigo] = {
-                        "etiqueta": etiqueta,
-                        "alertas": estados.count("alerta"),
-                        "ok": estados.count("ok"),
-                        "total": len(estados),
-                    }
-
-                item.update({
-                    "total_personas": len(documentos),
-                    "pendientes_revision": pendientes_revision,
-                    "entidades": entidades,
-                })
-            except Exception as error:
-                item["error"] = f"No se pudo leer personas_preparadas.csv: {error}"
-
-        resultado.append(item)
-
-    return {"grupos": resultado}
+    return {"grupos": grupos, "es_admin": _es_admin(usuario)}
 
 
 COLUMNAS_EDITABLES = [
@@ -502,18 +708,34 @@ COLUMNAS_EDITABLES = [
 
 
 @app.post("/api/preparar")
-def preparar_personas(request: Request, datos: dict = Body(...)):
-    _, error = _api_o_401(request)
+async def preparar_personas(
+    request: Request,
+    nombre_lote: str = Form(...),
+    pdf_autorizacion: UploadFile = File(...),
+    pdf_cedulas: Optional[UploadFile] = File(None),
+):
+    usuario, error = _api_o_401(request)
     if error:
         return error
 
-    ruta_autorizacion = (datos.get("ruta_autorizacion") or "").strip()
-    ruta_cedulas = (datos.get("ruta_cedulas") or "").strip()
+    carpeta_lote = _carpeta_lote(usuario, nombre_lote, crear=True)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "El nombre de la revisión no puede estar vacío."}, status_code=400)
 
-    if not ruta_autorizacion or not os.path.isfile(ruta_autorizacion):
-        return JSONResponse({"error": "No se encontró el PDF de autorización."}, status_code=400)
+    if not pdf_autorizacion.filename or not pdf_autorizacion.filename.lower().endswith(".pdf"):
+        return JSONResponse({"error": "El archivo de autorización debe ser un PDF."}, status_code=400)
 
-    df = pp.leer_autorizaciones(ruta_autorizacion)
+    ruta_autorizacion = carpeta_lote / "AUT_CONS_ANTEC.pdf"
+    ruta_autorizacion.write_bytes(await pdf_autorizacion.read())
+
+    ruta_cedulas = None
+    if pdf_cedulas is not None and pdf_cedulas.filename:
+        if not pdf_cedulas.filename.lower().endswith(".pdf"):
+            return JSONResponse({"error": "El archivo de cédulas debe ser un PDF."}, status_code=400)
+        ruta_cedulas = carpeta_lote / "CEDULAS.pdf"
+        ruta_cedulas.write_bytes(await pdf_cedulas.read())
+
+    df = pp.leer_autorizaciones(str(ruta_autorizacion))
     if df.empty:
         return JSONResponse({
             "error": "No se encontró ninguna persona en el PDF de autorización. "
@@ -521,49 +743,72 @@ def preparar_personas(request: Request, datos: dict = Body(...)):
         }, status_code=422)
 
     fechas_cedulas = {}
-    if ruta_cedulas and os.path.isfile(ruta_cedulas):
+    if ruta_cedulas is not None:
         try:
-            fechas_cedulas = pp.leer_fechas_desde_cedulas(ruta_cedulas, set(df["DOC"]))
+            fechas_cedulas = pp.leer_fechas_desde_cedulas(str(ruta_cedulas), set(df["DOC"]))
         except Exception as error:
             print(f"Aviso: no se pudo leer el PDF de cédulas por completo: {error}")
 
     df_final = pp.conciliar(df, fechas_cedulas)
-    ruta_salida_csv = os.path.join(os.path.dirname(ruta_autorizacion), "personas_preparadas.csv")
 
     return {
+        "nombre_lote": carpeta_lote.name,
         "filas": df_final[COLUMNAS_EDITABLES].to_dict(orient="records"),
-        "ruta_salida_csv": ruta_salida_csv,
         "total_revisar": int((df_final["REVISAR"] == "SI").sum()),
     }
 
 
-@app.post("/api/guardar-csv")
-def guardar_csv(request: Request, datos: dict = Body(...)):
-    _, error = _api_o_401(request)
+@app.post("/api/subir-pdf-directo")
+async def subir_pdf_directo(request: Request, nombre_lote: str = Form(...), pdf: UploadFile = File(...)):
+    """Camino rápido: correr una verificación directo desde el PDF de
+    autorización, sin pasar por 'Preparar personas' -- los scripts ya
+    saben leer personas directo de ese PDF."""
+    usuario, error = _api_o_401(request)
     if error:
         return error
 
-    ruta_csv = (datos.get("ruta_csv") or "").strip()
+    carpeta_lote = _carpeta_lote(usuario, nombre_lote, crear=True)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "El nombre de la revisión no puede estar vacío."}, status_code=400)
+    if not pdf.filename or not pdf.filename.lower().endswith(".pdf"):
+        return JSONResponse({"error": "Debe ser un PDF."}, status_code=400)
+
+    ruta_pdf = carpeta_lote / "AUT_CONS_ANTEC.pdf"
+    ruta_pdf.write_bytes(await pdf.read())
+
+    return {"nombre_lote": carpeta_lote.name, "archivo": ruta_pdf.name}
+
+
+@app.post("/api/guardar-csv")
+def guardar_csv(request: Request, datos: dict = Body(...)):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    nombre_lote = (datos.get("nombre_lote") or "").strip()
     filas = datos.get("filas") or []
 
-    if not ruta_csv:
-        return JSONResponse({"error": "Falta la ruta de salida."}, status_code=400)
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
 
-    if os.path.isfile(ruta_csv):
+    ruta_csv = carpeta_lote / "personas_preparadas.csv"
+    if ruta_csv.is_file():
         marca_tiempo = datetime.now().strftime("%Y%m%d_%H%M%S")
-        ruta_respaldo = ruta_csv.replace(".csv", f".bak_{marca_tiempo}.csv")
-        shutil.copy2(ruta_csv, ruta_respaldo)
+        shutil.copy2(ruta_csv, carpeta_lote / f"personas_preparadas.bak_{marca_tiempo}.csv")
 
     pd.DataFrame(filas)[COLUMNAS_EDITABLES].to_csv(ruta_csv, index=False, encoding="utf-8-sig")
 
-    return {"guardado": True, "ruta_csv": ruta_csv}
+    return {"guardado": True, "nombre_lote": carpeta_lote.name}
 
 
 @app.get("/api/configuracion")
 def obtener_configuracion(request: Request):
-    _, error = _api_o_401(request)
+    usuario, error = _api_o_401(request)
     if error:
         return error
+    if not _es_admin(usuario):
+        return JSONResponse({"error": "No tienes permiso de administrador."}, status_code=403)
 
     clave_captcha = os.getenv("API_KEY_2CAPTCHA", "")
 
@@ -602,7 +847,8 @@ def detener_verificacion(request: Request):
 @app.websocket("/ws/ejecutar")
 async def ejecutar_verificacion(websocket: WebSocket):
     """
-    El cliente manda un JSON inicial {"codigo": "rnmc", "ruta_csv": "..."}
+    El cliente manda un JSON inicial
+    {"codigo": "rnmc", "nombre_lote": "...", "archivo": "personas_preparadas.csv"}
     y de ahí en adelante recibe mensajes JSON:
       {"tipo": "espera", "posicion": N}      -- mientras espera un cupo
       {"tipo": "cupo", "puerto_vnc": 6081}   -- ya tiene cupo, aquí está el VNC
@@ -621,14 +867,17 @@ async def ejecutar_verificacion(websocket: WebSocket):
     try:
         datos = await websocket.receive_json()
         codigo = datos.get("codigo")
-        ruta_csv = (datos.get("ruta_csv") or "").strip()
+        nombre_lote = (datos.get("nombre_lote") or "").strip()
+        archivo = (datos.get("archivo") or "").strip()
 
         if codigo not in VERIFICACIONES:
             await websocket.send_json({"tipo": "log", "texto": f"ERROR: verificación desconocida '{codigo}'"})
             return
 
-        if not ruta_csv or not os.path.isfile(ruta_csv):
-            await websocket.send_json({"tipo": "log", "texto": f"ERROR: no se encontró el archivo: {ruta_csv}"})
+        carpeta_lote = _lote_existente(usuario, nombre_lote)
+        ruta_datos = _archivo_seguro_en_lote(carpeta_lote, archivo) if carpeta_lote else None
+        if ruta_datos is None:
+            await websocket.send_json({"tipo": "log", "texto": f"ERROR: no se encontró el archivo '{archivo}' en la revisión '{nombre_lote}'."})
             return
 
         async def avisar_posicion(posicion):
@@ -643,7 +892,7 @@ async def ejecutar_verificacion(websocket: WebSocket):
         await websocket.send_json({"tipo": "log", "texto": f"=== Iniciando: {nombre} ==="})
 
         proceso = await asyncio.create_subprocess_exec(
-            sys.executable, str(ruta_script), ruta_csv,
+            sys.executable, str(ruta_script), str(ruta_datos),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(DIRECTORIO_SCRIPTS),

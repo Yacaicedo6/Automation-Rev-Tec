@@ -4,23 +4,23 @@
 
 {% block contenido %}
   <div class="h-full overflow-y-auto p-6 flex flex-col gap-4 max-w-2xl">
-    <p class="text-sm text-[#807D72] -mt-2">
+    <p class="text-sm text-[var(--text-muted)] -mt-2">
       Cuentas del equipo. Cualquiera puede crear la suya propia desde la pantalla de registro --
       esto es para cuando alguien olvide su contraseña, o para dar/quitar permisos de administrador.
     </p>
 
-    <div id="tabla-usuarios" class="bg-white border border-[#E6E5E0] rounded-xl divide-y divide-[#E6E5E0]"></div>
+    <div id="tabla-usuarios" class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl divide-y divide-[var(--border)]"></div>
   </div>
 
   <!-- Modal: restablecer contraseña -->
   <div id="modal-restablecer" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl w-full max-w-sm p-5 flex flex-col gap-3">
+    <div class="bg-[var(--bg-card)] rounded-xl w-full max-w-sm p-5 flex flex-col gap-3">
       <div class="font-medium text-sm">Restablecer contraseña de <span id="usuario-restablecer"></span></div>
       <input id="clave-nueva" type="password" placeholder="Contraseña nueva (mínimo 6 caracteres)"
-             class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+             class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
       <div class="flex gap-2 justify-end">
-        <button id="btn-cancelar-restablecer" class="px-4 py-1.5 text-sm rounded-lg border border-[#E6E5E0] hover:bg-[#F7F7F4]">Cancelar</button>
-        <button id="btn-confirmar-restablecer" class="px-4 py-1.5 text-sm rounded-lg bg-[#F54E00] text-white hover:bg-[#D04200]">Guardar</button>
+        <button id="btn-cancelar-restablecer" class="px-4 py-1.5 text-sm rounded-lg border border-[var(--border)] hover:bg-[var(--hover-bg)]">Cancelar</button>
+        <button id="btn-confirmar-restablecer" class="px-4 py-1.5 text-sm rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">Guardar</button>
       </div>
     </div>
   </div>
@@ -42,14 +42,17 @@ function dibujarTabla() {
     const fila = document.createElement('div');
     fila.className = 'p-4 flex items-center justify-between gap-3';
     fila.innerHTML = `
-      <div class="flex items-center gap-2">
-        <span class="text-sm font-medium">${u.usuario}</span>
-        ${u.es_admin ? '<span class="insignia" style="background:#E3F3EC;color:#1F8A65;">Administrador</span>' : ''}
+      <div class="flex flex-col gap-0.5">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium">${u.usuario}</span>
+          ${u.es_admin ? '<span class="insignia" style="background:var(--badge-ok-bg);color:var(--badge-ok-text);">Administrador</span>' : ''}
+        </div>
+        ${u.nombre_completo ? `<span class="text-xs text-[var(--text-muted)]">${u.nombre_completo}${u.correo ? ' · ' + u.correo : ''}</span>` : ''}
       </div>
       <div class="flex items-center gap-3 text-xs">
-        <button class="btn-restablecer text-[#807D72] hover:text-[#26251E] hover:underline">Restablecer clave</button>
-        <button class="btn-toggle-admin text-[#807D72] hover:text-[#26251E] hover:underline">${u.es_admin ? 'Quitar admin' : 'Hacer admin'}</button>
-        ${u.usuario !== usuarioActual ? '<button class="btn-eliminar text-[#cf2d56] hover:underline">Eliminar</button>' : ''}
+        <button class="btn-restablecer text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">Restablecer clave</button>
+        <button class="btn-toggle-admin text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">${u.es_admin ? 'Quitar admin' : 'Hacer admin'}</button>
+        ${u.usuario !== usuarioActual ? '<button class="btn-eliminar text-[var(--badge-alerta-text)] hover:underline">Eliminar</button>' : ''}
       </div>
     `;
     fila.querySelector('.btn-restablecer').addEventListener('click', () => abrirRestablecer(u.usuario));

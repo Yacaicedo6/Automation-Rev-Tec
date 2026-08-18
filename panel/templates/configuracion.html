@@ -4,73 +4,182 @@
 
 {% block contenido %}
   <div class="h-full overflow-y-auto p-6 flex flex-col gap-5 max-w-2xl">
-    <p class="text-sm text-[#807D72] -mt-2">
-      Información real de diagnóstico del entorno donde corre el panel — no hay ajustes editables aquí
-      porque no hay ninguno que de verdad aplique a cómo funciona esta herramienta.
+
+    <div id="aviso-cuenta" class="hidden px-4 py-3 rounded-xl text-sm"></div>
+
+    <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4">
+      <div>
+        <div class="text-sm font-medium">Mis datos</div>
+        <div class="text-xs text-[var(--text-muted)] mt-0.5">Lo que registraste al crear tu cuenta. Tu usuario y número de identificación no se cambian desde aquí.</div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombres</label>
+          <input id="perfil-nombres" type="text" value="{{ mis_datos.nombres }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Apellidos</label>
+          <input id="perfil-apellidos" type="text" value="{{ mis_datos.apellidos }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Correo</label>
+          <input id="perfil-correo" type="email" value="{{ mis_datos.correo }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Celular</label>
+          <input id="perfil-celular" type="tel" value="{{ mis_datos.celular }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+      </div>
+      <button id="btn-guardar-perfil" class="bg-[var(--accent)] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors self-start">
+        Guardar datos
+      </button>
+    </div>
+
+    <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4">
+      <div>
+        <div class="text-sm font-medium">Cambiar mi contraseña</div>
+        <div class="text-xs text-[var(--text-muted)] mt-0.5">Si la olvidaste, pídele a un administrador que te la restablezca desde "Administración".</div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña actual</label>
+          <input id="clave-actual" type="password"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña nueva</label>
+          <input id="clave-nueva" type="password" minlength="6"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+        <div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Repite la nueva</label>
+          <input id="clave-nueva-confirmacion" type="password" minlength="6"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        </div>
+      </div>
+      <button id="btn-cambiar-clave" class="bg-[var(--accent)] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors self-start">
+        Cambiar contraseña
+      </button>
+    </div>
+
+    {% if es_admin %}
+    <p class="text-sm text-[var(--text-muted)] -mt-2">
+      Debajo, información real de diagnóstico del entorno donde corre el panel (útil si algo falla) — no son ajustes editables. Solo visible para administradores.
     </p>
 
-    <div class="bg-white border border-[#E6E5E0] rounded-xl divide-y divide-[#E6E5E0]">
+    <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl divide-y divide-[var(--border)]">
       <div class="p-4 flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">Clave de 2Captcha</div>
-          <div class="text-xs text-[#807D72] mt-0.5">Usada por Contraloría, Procuraduría, Judicial y Delitos Sexuales para resolver el reCAPTCHA.</div>
+          <div class="text-xs text-[var(--text-muted)] mt-0.5">Usada por Contraloría, Procuraduría, Judicial y Delitos Sexuales para resolver el reCAPTCHA.</div>
         </div>
         <span id="estado-captcha" class="insignia shrink-0">Cargando...</span>
       </div>
       <div class="p-4 flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">Modelos de OCR (EasyOCR)</div>
-          <div class="text-xs text-[#807D72] mt-0.5">Se usan para leer cédulas escaneadas cuando el PDF no trae texto real.</div>
+          <div class="text-xs text-[var(--text-muted)] mt-0.5">Se usan para leer cédulas escaneadas cuando el PDF no trae texto real.</div>
         </div>
-        <span id="ruta-ocr" class="text-xs mono text-[#807D72] text-right shrink-0"></span>
+        <span id="ruta-ocr" class="text-xs mono text-[var(--text-muted)] text-right shrink-0"></span>
       </div>
       <div class="p-4 flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">Python</div>
-          <div class="text-xs text-[#807D72] mt-0.5">Intérprete usado por el panel y los scripts de verificación.</div>
+          <div class="text-xs text-[var(--text-muted)] mt-0.5">Intérprete usado por el panel y los scripts de verificación.</div>
         </div>
-        <span id="version-python" class="text-xs mono text-[#807D72] shrink-0"></span>
+        <span id="version-python" class="text-xs mono text-[var(--text-muted)] shrink-0"></span>
       </div>
       <div class="p-4 flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">PyTorch</div>
-          <div class="text-xs text-[#807D72] mt-0.5">Motor sobre el que corre EasyOCR (versión solo-CPU).</div>
+          <div class="text-xs text-[var(--text-muted)] mt-0.5">Motor sobre el que corre EasyOCR (versión solo-CPU).</div>
         </div>
-        <span id="version-torch" class="text-xs mono text-[#807D72] shrink-0"></span>
+        <span id="version-torch" class="text-xs mono text-[var(--text-muted)] shrink-0"></span>
       </div>
       <div class="p-4 flex items-center justify-between gap-4">
         <div>
           <div class="text-sm font-medium">Carpeta de scripts</div>
-          <div class="text-xs text-[#807D72] mt-0.5">Donde viven preparar_personas.py y los 5 automation_*.py.</div>
+          <div class="text-xs text-[var(--text-muted)] mt-0.5">Donde viven preparar_personas.py y los 5 automation_*.py.</div>
         </div>
-        <span id="directorio-scripts" class="text-xs mono text-[#807D72] text-right break-all max-w-xs"></span>
+        <span id="directorio-scripts" class="text-xs mono text-[var(--text-muted)] text-right break-all max-w-xs"></span>
       </div>
     </div>
 
-    <div class="bg-[#F7ECD9] text-[#96650A] rounded-xl p-4 text-sm">
-      Este panel corre completamente en tu equipo (dentro de WSL) y no tiene inicio de sesión propio.
-      No lo expongas fuera de <span class="mono">localhost</span> sin agregar antes autenticación real y
-      confirmar el visto bueno legal/de protección de datos — esto maneja cédulas y datos personales
-      de postulantes.
+    <div class="bg-[var(--badge-pendiente-bg)] text-[var(--badge-pendiente-text)] rounded-xl p-4 text-sm">
+      Este panel corre completamente en tu equipo (dentro de WSL). Cada cuenta es individual, con
+      contraseña propia, y solo ve sus propias revisiones. Aun así, esta herramienta maneja
+      cédulas y datos personales de postulantes -- no la expongas más allá de tu red de trabajo o
+      de tu tailnet/red privada sin confirmar el visto bueno legal correspondiente.
     </div>
+    {% endif %}
   </div>
 {% endblock %}
 
 {% block script %}
 <script>
+const avisoCuenta = document.getElementById('aviso-cuenta');
+
+function mostrarAvisoCuenta(texto, tipo) {
+  avisoCuenta.textContent = texto;
+  avisoCuenta.classList.remove('hidden');
+  avisoCuenta.className = `px-4 py-3 rounded-xl text-sm ${
+    tipo === 'error' ? 'bg-[var(--badge-alerta-bg)] text-[var(--badge-alerta-text)]' : 'bg-[var(--badge-ok-bg)] text-[var(--badge-ok-text)]'
+  }`;
+}
+
+document.getElementById('btn-guardar-perfil').addEventListener('click', async () => {
+  const resp = await fetch('/api/mi-perfil', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      nombres: document.getElementById('perfil-nombres').value.trim(),
+      apellidos: document.getElementById('perfil-apellidos').value.trim(),
+      correo: document.getElementById('perfil-correo').value.trim(),
+      celular: document.getElementById('perfil-celular').value.trim(),
+    }),
+  });
+  const datos = await resp.json();
+  mostrarAvisoCuenta(datos.error || 'Datos actualizados.', datos.error ? 'error' : 'ok');
+});
+
+document.getElementById('btn-cambiar-clave').addEventListener('click', async () => {
+  const claveActual = document.getElementById('clave-actual').value;
+  const claveNueva = document.getElementById('clave-nueva').value;
+  const confirmacion = document.getElementById('clave-nueva-confirmacion').value;
+
+  const resp = await fetch('/api/mi-clave', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clave_actual: claveActual, clave_nueva: claveNueva, confirmacion }),
+  });
+  const datos = await resp.json();
+  mostrarAvisoCuenta(datos.error || 'Contraseña actualizada.', datos.error ? 'error' : 'ok');
+  if (!datos.error) {
+    document.getElementById('clave-actual').value = '';
+    document.getElementById('clave-nueva').value = '';
+    document.getElementById('clave-nueva-confirmacion').value = '';
+  }
+});
+
 async function cargarConfiguracion() {
+  const estadoCaptcha = document.getElementById('estado-captcha');
+  if (!estadoCaptcha) return; // no es administrador, no hay nada que cargar aquí
+
   const resp = await fetch('/api/configuracion');
   const datos = await resp.json();
 
-  const estadoCaptcha = document.getElementById('estado-captcha');
   if (datos.captcha_configurada) {
     estadoCaptcha.textContent = `Configurada (${datos.captcha_clave_parcial})`;
-    estadoCaptcha.style.background = '#E3F3EC';
-    estadoCaptcha.style.color = '#1F8A65';
+    estadoCaptcha.style.background = 'var(--badge-ok-bg)';
+    estadoCaptcha.style.color = 'var(--badge-ok-text)';
   } else {
     estadoCaptcha.textContent = 'No configurada';
-    estadoCaptcha.style.background = '#FBE3E9';
-    estadoCaptcha.style.color = '#cf2d56';
+    estadoCaptcha.style.background = 'var(--badge-alerta-bg)';
+    estadoCaptcha.style.color = 'var(--badge-alerta-text)';
   }
 
   document.getElementById('ruta-ocr').textContent = datos.ruta_modelos_ocr;

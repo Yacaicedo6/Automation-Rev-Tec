@@ -2,27 +2,96 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
+<script>
+  // Se aplica antes de que se pinte la página, para que no haya un
+  // parpadeo con el tema o la barra lateral en su estado por defecto,
+  // cuando ya habías guardado otra preferencia.
+  (function () {
+    if (localStorage.getItem('tema') === 'oscuro') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+    if (localStorage.getItem('barra') === 'oculta') {
+      document.documentElement.setAttribute('data-barra', 'oculta');
+    }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>{% block titulo %}Revisión técnico-administrativa{% endblock %}</title>
+<link rel="icon" type="image/png" href="/static/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+<link rel="shortcut icon" href="/static/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png" />
+<link rel="manifest" href="/static/site.webmanifest" />
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg-page: #F7F7F4;
+    --bg-card: #FFFFFF;
+    --text-main: #26251E;
+    --text-muted: #807D72;
+    --border: #E6E5E0;
+    --hover-bg: #F7F7F4;
+    --badge-ok-bg: #E3F3EC;
+    --badge-ok-text: #1F8A65;
+    --badge-pendiente-bg: #F7ECD9;
+    --badge-pendiente-text: #96650A;
+    --badge-alerta-bg: #FBE3E9;
+    --badge-alerta-text: #cf2d56;
+    --accent: #F54E00;
+    --accent-hover: #D04200;
+  }
+  :root[data-theme="dark"] {
+    --bg-page: #17160F;
+    --bg-card: #24231C;
+    --text-main: #F2F0E9;
+    --text-muted: #A6A296;
+    --border: #3A3830;
+    --hover-bg: #2E2C24;
+    --badge-ok-bg: #16332A;
+    --badge-ok-text: #4ADE80;
+    --badge-pendiente-bg: #3D2E10;
+    --badge-pendiente-text: #F2B94D;
+    --badge-alerta-bg: #3A1620;
+    --badge-alerta-text: #FB7185;
+    --accent: #F54E00;
+    --accent-hover: #FF6A1F;
+  }
   html, body { height: 100%; margin: 0; }
-  body { font-family: 'Inter', system-ui, sans-serif; background:#F7F7F4; color:#26251E; }
+  body { font-family: 'Inter', system-ui, sans-serif; background:var(--bg-page); color:var(--text-main); }
+  #barra-lateral { transition: transform 0.2s ease-in-out, width 0.2s ease-in-out, min-width 0.2s ease-in-out; }
+  /* En escritorio, la barra ocupa espacio real en el diseño (no es un
+     overlay como en celular), así que para "ocultarla" se le quita el
+     ancho -- en vez de solo desplazarla -- para que el contenido
+     recupere ese espacio. */
+  @media (min-width: 768px) {
+    :root[data-barra="oculta"] #barra-lateral {
+      width: 0;
+      min-width: 0;
+      overflow: hidden;
+      border: none;
+    }
+  }
   .mono { font-family: 'JetBrains Mono', monospace; }
   .insignia { display:inline-block; padding:0.2rem 0.7rem; border-radius:9999px; font-weight:600; font-size:0.72rem; letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap; }
+  #icono-luna { display: none; }
+  :root[data-theme="dark"] #icono-sol { display: none; }
+  :root[data-theme="dark"] #icono-luna { display: block; }
   {% block estilos %}{% endblock %}
 </style>
 </head>
 <body class="h-screen flex overflow-hidden">
 
+  <!-- Fondo oscuro detrás de la barra lateral, solo en pantallas chicas -->
+  <div id="fondo-menu" class="hidden md:hidden fixed inset-0 bg-black/40 z-30"></div>
+
   <!-- Barra lateral -->
-  <aside class="w-60 shrink-0 bg-[#26251E] text-[#F7F7F4] flex flex-col">
-    <div class="px-5 py-5 border-b border-white/10">
+  <aside id="barra-lateral" class="fixed inset-y-0 left-0 z-40 -translate-x-full md:static md:translate-x-0 w-60 shrink-0 bg-[#26251E] text-[#F7F7F4] flex flex-col">
+    <a href="/" class="block px-5 py-5 border-b border-white/10 hover:bg-white/5 transition-colors">
       <div class="text-sm font-medium tracking-tight">Revisión técnico-administrativa</div>
       <div class="text-xs text-white/50 mt-0.5">Alcaldía de Cali</div>
-    </div>
+    </a>
     <nav class="flex-1 px-3 py-4 flex flex-col gap-1 text-sm">
       <a href="/" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'verificaciones' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Ejecutar verificaciones</a>
       <a href="/preparar" class="px-3 py-2 rounded-lg transition-colors {{ 'bg-white/10 text-white font-medium' if pagina_activa == 'preparar' else 'text-white/60 hover:bg-white/5 hover:text-white' }}">Preparar personas</a>
@@ -33,12 +102,6 @@
       {% endif %}
     </nav>
     <div class="p-4 border-t border-white/10 flex flex-col gap-3">
-      <div class="bg-white/5 rounded-xl p-3">
-        <div class="text-xs text-white/50 mb-1.5">Estado</div>
-        <div class="flex items-center gap-2 text-xs text-white/80">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Panel activo, en la red del equipo
-        </div>
-      </div>
       {% if usuario %}
       <div class="flex items-center justify-between text-xs px-1">
         <span class="text-white/60">Sesión: <span class="text-white font-medium">{{ usuario }}</span></span>
@@ -50,15 +113,87 @@
 
   <!-- Contenido -->
   <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
-    <header class="shrink-0 border-b border-[#E6E5E0] bg-white px-6 py-3 flex items-center justify-between">
-      <h1 class="text-lg font-medium tracking-tight leading-tight">{% block encabezado %}{% endblock %}</h1>
-      {% block encabezado_extra %}{% endblock %}
+    <header class="shrink-0 border-b border-[var(--border)] bg-[var(--bg-card)] px-4 md:px-6 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2 min-w-0">
+        <button id="btn-menu" type="button" class="-ml-1 shrink-0 p-2 rounded-lg text-[var(--text-main)] hover:bg-[var(--hover-bg)] transition-colors" aria-label="Mostrar u ocultar la barra lateral" title="Mostrar u ocultar la barra lateral">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <h1 class="text-lg font-medium tracking-tight leading-tight truncate">{% block encabezado %}{% endblock %}</h1>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        {% block encabezado_extra %}{% endblock %}
+        <button id="btn-tema" type="button" class="p-2 rounded-lg border border-[var(--border)] text-[var(--text-main)] hover:bg-[var(--hover-bg)] transition-colors" aria-label="Cambiar entre modo claro y oscuro" title="Cambiar entre modo claro y oscuro">
+          <svg id="icono-sol" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+          </svg>
+          <svg id="icono-luna" xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+          </svg>
+        </button>
+      </div>
     </header>
     <main class="flex-1 min-h-0 overflow-y-auto">
       {% block contenido %}{% endblock %}
     </main>
   </div>
 
+<script>
+  (function () {
+    const barra = document.getElementById('barra-lateral');
+    const fondo = document.getElementById('fondo-menu');
+    const boton = document.getElementById('btn-menu');
+
+    function esEscritorio() {
+      return window.matchMedia('(min-width: 768px)').matches;
+    }
+
+    // Celular: la barra es un panel que se desliza encima del contenido.
+    function abrirMenuMovil() {
+      barra.classList.remove('-translate-x-full');
+      fondo.classList.remove('hidden');
+    }
+    function cerrarMenuMovil() {
+      barra.classList.add('-translate-x-full');
+      fondo.classList.add('hidden');
+    }
+
+    // Escritorio: la barra ocupa espacio real, así que se colapsa (ver
+    // CSS de arriba) en vez de deslizarse, y la preferencia se recuerda.
+    function mostrarBarraEscritorio() {
+      document.documentElement.removeAttribute('data-barra');
+      localStorage.setItem('barra', 'visible');
+    }
+    function ocultarBarraEscritorio() {
+      document.documentElement.setAttribute('data-barra', 'oculta');
+      localStorage.setItem('barra', 'oculta');
+    }
+
+    if (boton) {
+      boton.addEventListener('click', () => {
+        if (esEscritorio()) {
+          const oculta = document.documentElement.getAttribute('data-barra') === 'oculta';
+          if (oculta) mostrarBarraEscritorio(); else ocultarBarraEscritorio();
+        } else {
+          const abierta = !barra.classList.contains('-translate-x-full');
+          if (abierta) cerrarMenuMovil(); else abrirMenuMovil();
+        }
+      });
+    }
+    if (fondo) fondo.addEventListener('click', cerrarMenuMovil);
+  })();
+
+  document.getElementById('btn-tema').addEventListener('click', () => {
+    const esOscuro = document.documentElement.getAttribute('data-theme') === 'dark';
+    if (esOscuro) {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.setItem('tema', 'claro');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('tema', 'oscuro');
+    }
+  });
+</script>
 {% block script %}{% endblock %}
 </body>
 </html>

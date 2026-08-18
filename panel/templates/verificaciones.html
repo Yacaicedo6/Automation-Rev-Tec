@@ -1,0 +1,298 @@
+{% extends "_base.html" %}
+{% block titulo %}Ejecutar verificaciones{% endblock %}
+{% block encabezado %}Ejecutar verificaciones{% endblock %}
+{% block encabezado_extra %}
+    <span id="estado-conexion" class="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[var(--border)] text-[var(--text-main)]">
+      <span class="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]"></span> Sin iniciar
+    </span>
+{% endblock %}
+
+{% block estilos %}
+  #log-entries::-webkit-scrollbar { width: 8px; }
+  #log-entries::-webkit-scrollbar-thumb { background:#3a3830; border-radius:4px; }
+  .pestana-fuente { border-bottom: 2px solid transparent; color: var(--text-muted); }
+  .pestana-fuente.activa { border-color: var(--accent); color: var(--text-main); font-weight: 500; }
+{% endblock %}
+
+{% block contenido %}
+  <div class="lg:h-full grid grid-cols-1 lg:grid-cols-2">
+
+    <!-- Panel de control + logs -->
+    <section class="lg:min-h-0 flex flex-col gap-3 p-4 border-r border-[var(--border)] lg:overflow-y-auto">
+
+      <div class="shrink-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-3">
+        <div class="flex gap-4 text-xs border-b border-[var(--border)]">
+          <button type="button" data-fuente="revision" class="pestana-fuente activa pb-2">Usar una revisión mía</button>
+          <button type="button" data-fuente="subida" class="pestana-fuente pb-2">Subir un PDF directo</button>
+        </div>
+
+        <div id="bloque-fuente-revision" class="flex flex-col gap-2">
+          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión</label>
+          <select id="select-revision" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+            <option value="">Cargando...</option>
+          </select>
+        </div>
+
+        <div id="bloque-fuente-subida" class="hidden flex-col gap-2">
+          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+          <input id="nombre-revision-subida" type="text" placeholder="Ej: Festival Mundial de Salsa"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
+          <input id="archivo-subida" type="file" accept="application/pdf"
+                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+        </div>
+
+        <div>
+          <span class="text-xs font-medium block mb-1.5 text-[var(--text-muted)] uppercase tracking-wide">Verificaciones a correr</span>
+          <div id="lista-verificaciones" class="flex flex-col gap-1 text-sm"></div>
+        </div>
+
+        <div class="flex gap-2">
+          <button id="btn-iniciar"
+                  class="flex-1 bg-[var(--accent)] text-white rounded-lg py-2 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Iniciar
+          </button>
+          <button id="btn-detener" disabled
+                  class="flex-1 bg-[var(--bg-card)] border border-[var(--badge-alerta-text)] text-[var(--badge-alerta-text)] rounded-lg py-2 text-sm font-medium hover:bg-[var(--badge-alerta-bg)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:border-[var(--border)] disabled:text-[var(--text-muted)]">
+            Detener
+          </button>
+        </div>
+      </div>
+
+      <div id="bloque-resultados" class="hidden shrink-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">Resultados de esta revisión</span>
+          <a id="link-descargar-zip" href="#" class="border border-[var(--border)] rounded-lg py-1.5 px-3 text-xs hover:bg-[var(--hover-bg)] transition-colors">
+            Descargar todo (.zip)
+          </a>
+        </div>
+        <div id="lista-resultados" class="flex flex-col gap-1 text-xs max-h-40 overflow-y-auto"></div>
+      </div>
+
+      <div class="min-h-[320px] lg:flex-1 lg:min-h-0 bg-[#181d26] rounded-xl flex flex-col overflow-hidden">
+        <div class="shrink-0 px-3 py-2 border-b border-white/10 flex items-center gap-2 text-xs uppercase tracking-wider text-white/50">
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Registro en vivo
+        </div>
+        <div id="log-entries" class="flex-1 min-h-0 overflow-y-auto p-3 mono text-[12px] leading-relaxed text-white/90 space-y-0.5"></div>
+      </div>
+    </section>
+
+    <!-- Visor remoto del navegador (VNC embebido) -->
+    <section class="lg:min-h-0 flex flex-col gap-2 p-4">
+      <div class="shrink-0">
+        <h2 class="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Navegador en vivo</h2>
+        <p class="text-xs text-[var(--text-muted)] mt-0.5">Si un portal pide resolver una pregunta de seguridad o corregir un error, hazlo directamente aquí.</p>
+      </div>
+      <div class="min-h-[280px] lg:flex-1 lg:min-h-0 border border-[var(--border)] rounded-xl overflow-hidden bg-black flex items-center justify-center">
+        <div id="visor-vacio" class="text-center text-white/40 text-sm px-6">
+          Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.
+        </div>
+        <iframe id="visor-vnc" class="hidden w-full h-full block"></iframe>
+      </div>
+    </section>
+
+  </div>
+{% endblock %}
+
+{% block script %}
+<script>
+const listaVerificaciones = document.getElementById('lista-verificaciones');
+const btnIniciar = document.getElementById('btn-iniciar');
+const btnDetener = document.getElementById('btn-detener');
+const selectRevision = document.getElementById('select-revision');
+const nombreRevisionSubidaInput = document.getElementById('nombre-revision-subida');
+const archivoSubidaInput = document.getElementById('archivo-subida');
+const bloqueFuenteRevision = document.getElementById('bloque-fuente-revision');
+const bloqueFuenteSubida = document.getElementById('bloque-fuente-subida');
+const logEntries = document.getElementById('log-entries');
+const estadoConexion = document.getElementById('estado-conexion');
+const visorVacio = document.getElementById('visor-vacio');
+const visorVnc = document.getElementById('visor-vnc');
+const bloqueResultados = document.getElementById('bloque-resultados');
+const listaResultados = document.getElementById('lista-resultados');
+const linkDescargarZip = document.getElementById('link-descargar-zip');
+
+let verificaciones = {};
+let cancelado = false;
+let wsActual = null;
+let fuenteActiva = 'revision';
+let misRevisiones = [];
+
+document.querySelectorAll('.pestana-fuente').forEach(boton => {
+  boton.addEventListener('click', () => {
+    fuenteActiva = boton.dataset.fuente;
+    document.querySelectorAll('.pestana-fuente').forEach(b => b.classList.toggle('activa', b === boton));
+    bloqueFuenteRevision.classList.toggle('hidden', fuenteActiva !== 'revision');
+    bloqueFuenteSubida.classList.toggle('hidden', fuenteActiva !== 'subida');
+  });
+});
+
+function mostrarVisor(puertoVnc) {
+  const host = location.hostname;
+  visorVnc.src = `http://${host}:${puertoVnc}/vnc.html?host=${host}&port=${puertoVnc}&autoconnect=true&resize=scale`;
+  visorVnc.classList.remove('hidden');
+  visorVacio.classList.add('hidden');
+}
+
+function ocultarVisor(mensaje) {
+  visorVnc.src = '';
+  visorVnc.classList.add('hidden');
+  visorVacio.textContent = mensaje;
+  visorVacio.classList.remove('hidden');
+}
+
+async function cargarVerificaciones() {
+  const resp = await fetch('/api/verificaciones');
+  verificaciones = await resp.json();
+  listaVerificaciones.innerHTML = '';
+  for (const [codigo, nombre] of Object.entries(verificaciones)) {
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-2';
+    label.innerHTML = `<input type="checkbox" value="${codigo}" checked class="rounded border-[var(--border)]"> ${nombre}`;
+    listaVerificaciones.appendChild(label);
+  }
+}
+
+async function cargarMisRevisiones() {
+  const resp = await fetch('/api/mis-lotes');
+  const datos = await resp.json();
+  misRevisiones = datos.lotes || [];
+  selectRevision.innerHTML = '';
+  if (misRevisiones.length === 0) {
+    selectRevision.innerHTML = '<option value="">No tienes revisiones todavía -- prepáralas en "Preparar personas" o sube un PDF aquí</option>';
+    return;
+  }
+  for (const revision of misRevisiones) {
+    const opcion = document.createElement('option');
+    opcion.value = revision.nombre_lote;
+    const detalle = revision.tiene_csv
+      ? `${revision.total_personas ?? '?'} persona(s), CSV preparado`
+      : (revision.tiene_autorizacion ? 'solo PDF de autorización' : 'vacía');
+    opcion.textContent = `${revision.nombre_lote} (${detalle})`;
+    opcion.disabled = !revision.archivo_para_verificar;
+    selectRevision.appendChild(opcion);
+  }
+}
+
+function agregarLinea(texto) {
+  const linea = document.createElement('div');
+  linea.textContent = texto;
+  logEntries.appendChild(linea);
+  logEntries.scrollTop = logEntries.scrollHeight;
+}
+
+function marcarEstado(texto, color) {
+  estadoConexion.innerHTML = `<span class="w-1.5 h-1.5 rounded-full" style="background:${color}"></span> ${texto}`;
+}
+
+async function cargarResultados(nombreRevision) {
+  const resp = await fetch(`/api/lote/${encodeURIComponent(nombreRevision)}/archivos`);
+  const datos = await resp.json();
+  if (datos.error) return;
+
+  listaResultados.innerHTML = '';
+  for (const archivo of datos.archivos) {
+    const fila = document.createElement('a');
+    fila.href = `/api/lote/${encodeURIComponent(nombreRevision)}/descargar?archivo=${encodeURIComponent(archivo.ruta_relativa)}`;
+    fila.className = 'flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[var(--hover-bg)] mono';
+    fila.innerHTML = `<span class="truncate">${archivo.ruta_relativa}</span><span class="text-[var(--text-muted)] shrink-0 ml-2">${archivo.tamano_kb} KB</span>`;
+    listaResultados.appendChild(fila);
+  }
+  linkDescargarZip.href = `/api/lote/${encodeURIComponent(nombreRevision)}/descargar-zip`;
+  bloqueResultados.classList.remove('hidden');
+}
+
+async function correrVerificacion(codigo, nombreRevision, archivo) {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(`ws://${location.host}/ws/ejecutar`);
+    wsActual = ws;
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ codigo, nombre_lote: nombreRevision, archivo }));
+    };
+    ws.onmessage = (evento) => {
+      const mensaje = JSON.parse(evento.data);
+      if (mensaje.tipo === 'espera') {
+        marcarEstado(`Esperando cupo (posición ${mensaje.posicion})...`, 'var(--badge-pendiente-text)');
+        ocultarVisor(`Esperando que se libere un cupo... (posición ${mensaje.posicion} en la fila)`);
+      } else if (mensaje.tipo === 'cupo') {
+        marcarEstado('Corriendo...', 'var(--accent)');
+        mostrarVisor(mensaje.puerto_vnc);
+      } else if (mensaje.tipo === 'log') {
+        agregarLinea(mensaje.texto);
+      } else if (mensaje.tipo === 'fin') {
+        agregarLinea(`=== ${mensaje.estado === 'completado' ? 'Completado' : mensaje.estado === 'detenido' ? 'Detenido por el usuario' : 'Terminó con errores'} ===`);
+      }
+    };
+    ws.onclose = () => { wsActual = null; resolve(); };
+    ws.onerror = () => { wsActual = null; resolve(); };
+  });
+}
+
+btnIniciar.addEventListener('click', async () => {
+  const seleccionadas = Array.from(listaVerificaciones.querySelectorAll('input[type=checkbox]:checked')).map(i => i.value);
+  if (seleccionadas.length === 0) return;
+
+  let nombreRevision = '';
+  let archivo = '';
+
+  if (fuenteActiva === 'revision') {
+    nombreRevision = selectRevision.value;
+    const revision = misRevisiones.find(r => r.nombre_lote === nombreRevision);
+    if (!revision || !revision.archivo_para_verificar) {
+      agregarLinea('ERROR: elige una revisión que ya tenga un PDF o CSV.');
+      return;
+    }
+    archivo = revision.archivo_para_verificar;
+  } else {
+    const nombreRevisionNueva = nombreRevisionSubidaInput.value.trim();
+    const archivoPdf = archivoSubidaInput.files[0];
+    if (!nombreRevisionNueva || !archivoPdf) {
+      agregarLinea('ERROR: ponle un nombre a la revisión y sube el PDF de autorización.');
+      return;
+    }
+    btnIniciar.disabled = true;
+    const formulario = new FormData();
+    formulario.append('nombre_lote', nombreRevisionNueva);
+    formulario.append('pdf', archivoPdf);
+    const resp = await fetch('/api/subir-pdf-directo', { method: 'POST', body: formulario });
+    const datos = await resp.json();
+    if (datos.error) {
+      agregarLinea(`ERROR: ${datos.error}`);
+      btnIniciar.disabled = false;
+      return;
+    }
+    nombreRevision = datos.nombre_lote;
+    archivo = datos.archivo;
+    await cargarMisRevisiones();
+  }
+
+  cancelado = false;
+  btnIniciar.disabled = true;
+  btnDetener.disabled = false;
+  marcarEstado('Corriendo...', 'var(--accent)');
+  logEntries.innerHTML = '';
+  bloqueResultados.classList.add('hidden');
+
+  for (const codigo of seleccionadas) {
+    if (cancelado) break;
+    await correrVerificacion(codigo, nombreRevision, archivo);
+  }
+
+  marcarEstado(cancelado ? 'Detenido' : 'Terminado', cancelado ? 'var(--badge-alerta-text)' : 'var(--badge-ok-text)');
+  ocultarVisor(`Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.`);
+  btnIniciar.disabled = false;
+  btnDetener.disabled = true;
+  cargarResultados(nombreRevision);
+});
+
+btnDetener.addEventListener('click', async () => {
+  cancelado = true;
+  agregarLinea('--- Deteniendo, por favor espera... ---');
+  btnDetener.disabled = true;
+  await fetch('/api/detener', { method: 'POST' });
+});
+
+cargarVerificaciones();
+cargarMisRevisiones();
+</script>
+{% endblock %}
