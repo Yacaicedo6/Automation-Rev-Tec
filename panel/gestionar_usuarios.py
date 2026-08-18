@@ -25,15 +25,29 @@ import bcrypt
 RUTA_USUARIOS = Path(__file__).resolve().parent / "usuarios.json"
 
 
+CAMPOS_POR_DEFECTO = {
+    "es_admin": False,
+    "nombres": "",
+    "apellidos": "",
+    "identificacion": "",
+    "correo": "",
+    "celular": "",
+    "acepto_terminos": False,
+}
+
+
 def _cargar():
     if not RUTA_USUARIOS.is_file():
         return {}
     datos = json.loads(RUTA_USUARIOS.read_text(encoding="utf-8"))
-    # Compatibilidad con el formato viejo (usuario -> hash directo, sin
-    # marca de administrador), de antes de que existiera /registro.
+    # Compatibilidad con formatos viejos (usuario -> hash directo, o sin
+    # los campos de nombre/identificación que se agregaron después).
     for usuario, valor in datos.items():
         if isinstance(valor, str):
-            datos[usuario] = {"hash": valor, "es_admin": False}
+            valor = {"hash": valor}
+        for campo, por_defecto in CAMPOS_POR_DEFECTO.items():
+            valor.setdefault(campo, por_defecto)
+        datos[usuario] = valor
     return datos
 
 
@@ -61,7 +75,7 @@ def agregar(usuario):
         return
     clave = _pedir_clave()
     hash_clave = bcrypt.hashpw(clave.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    usuarios[usuario] = {"hash": hash_clave, "es_admin": False}
+    usuarios[usuario] = {"hash": hash_clave, **CAMPOS_POR_DEFECTO}
     _guardar(usuarios)
     print(f"Usuario '{usuario}' creado.")
 

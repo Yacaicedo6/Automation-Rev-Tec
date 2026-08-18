@@ -5,41 +5,34 @@
 {% block estilos %}
   table input, table select {
     width: 100%; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px;
-    background: transparent; font-size: 13px;
+    background: transparent; font-size: 13px; color: var(--text-main);
   }
-  table input:hover, table select:hover { border-color: #E6E5E0; }
-  table input:focus, table select:focus { outline: none; border-color: #F54E00; background: white; }
+  table input:hover, table select:hover { border-color: var(--border); }
+  table input:focus, table select:focus { outline: none; border-color: var(--accent); background: var(--bg-card); }
 {% endblock %}
 
 {% block contenido %}
   <div class="h-full overflow-y-auto p-6 flex flex-col gap-4">
 
-    <div class="bg-white border border-[#E6E5E0] rounded-xl p-5 flex flex-col gap-4 max-w-3xl">
+    <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4 max-w-3xl">
+      <div>
+        <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombre de esta revisión</label>
+        <input id="nombre-revision" type="text" placeholder="Ej: Festival Mundial de Salsa"
+               class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">PDF de autorización</label>
-          <div class="flex gap-2">
-            <input id="ruta-autorizacion" type="text" placeholder="AUT_CONS_ANTEC.pdf"
-                   class="flex-1 min-w-0 border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs mono focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
-            <button type="button" data-campo="ruta-autorizacion"
-                    class="btn-buscar border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs hover:bg-[#F7F7F4] transition-colors whitespace-nowrap shrink-0">
-              Buscar...
-            </button>
-          </div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de autorización</label>
+          <input id="archivo-autorizacion" type="file" accept="application/pdf"
+                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">PDF de copias de cédula (opcional)</label>
-          <div class="flex gap-2">
-            <input id="ruta-cedulas" type="text" placeholder="Opcional"
-                   class="flex-1 min-w-0 border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs mono focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
-            <button type="button" data-campo="ruta-cedulas"
-                    class="btn-buscar border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs hover:bg-[#F7F7F4] transition-colors whitespace-nowrap shrink-0">
-              Buscar...
-            </button>
-          </div>
+          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de copias de cédula (opcional)</label>
+          <input id="archivo-cedulas" type="file" accept="application/pdf"
+                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
         </div>
       </div>
-      <button id="btn-leer" class="bg-[#F54E00] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#D04200] transition-colors self-start px-6 disabled:opacity-40">
+      <button id="btn-leer" class="bg-[var(--accent)] text-white rounded-lg py-2 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors self-start px-6 disabled:opacity-40">
         Leer y conciliar
       </button>
     </div>
@@ -49,13 +42,18 @@
     <div id="contenedor-tabla" class="hidden flex-1 min-h-0 flex flex-col gap-3">
       <div class="flex items-center justify-between">
         <span class="text-sm font-medium">Revisa y corrige lo que haga falta directamente en la tabla</span>
-        <button id="btn-guardar" class="bg-[#F54E00] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[#D04200] transition-colors">
-          Guardar CSV
-        </button>
+        <div class="flex items-center gap-2">
+          <a id="link-descargar-csv" href="#" class="hidden border border-[var(--border)] rounded-lg py-2 px-4 text-sm font-medium hover:bg-[var(--hover-bg)] transition-colors">
+            Descargar CSV
+          </a>
+          <button id="btn-guardar" class="bg-[var(--accent)] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors">
+            Guardar CSV
+          </button>
+        </div>
       </div>
-      <div class="flex-1 min-h-0 overflow-auto border border-[#E6E5E0] rounded-xl bg-white">
+      <div class="flex-1 min-h-0 overflow-auto border border-[var(--border)] rounded-xl bg-[var(--bg-card)]">
         <table class="w-full text-left border-collapse">
-          <thead class="sticky top-0 bg-[#F7F7F4] border-b border-[#E6E5E0]">
+          <thead class="sticky top-0 bg-[var(--bg-page)] border-b border-[var(--border)]">
             <tr id="fila-encabezado"></tr>
           </thead>
           <tbody id="cuerpo-tabla"></tbody>
@@ -63,18 +61,6 @@
       </div>
     </div>
 
-  </div>
-
-  <!-- Explorador de archivos -->
-  <div id="modal-explorador" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-      <div class="px-5 py-3 border-b border-[#E6E5E0] flex items-center justify-between">
-        <span class="font-medium text-sm">Selecciona el PDF</span>
-        <button id="btn-cerrar-explorador" class="text-[#807D72] hover:text-[#26251E]">✕</button>
-      </div>
-      <div id="ruta-explorador" class="px-5 py-2 text-xs mono text-[#807D72] border-b border-[#E6E5E0] break-all"></div>
-      <div id="lista-explorador" class="flex-1 overflow-y-auto p-2"></div>
-    </div>
   </div>
 {% endblock %}
 
@@ -87,36 +73,35 @@ const COLUMNAS = [
   ["REVISAR", "Revisar"], ["MOTIVO_REVISAR", "Motivo"],
 ];
 
-const rutaAutorizacionInput = document.getElementById('ruta-autorizacion');
-const rutaCedulasInput = document.getElementById('ruta-cedulas');
+const nombreRevisionInput = document.getElementById('nombre-revision');
+const archivoAutorizacionInput = document.getElementById('archivo-autorizacion');
+const archivoCedulasInput = document.getElementById('archivo-cedulas');
 const btnLeer = document.getElementById('btn-leer');
 const btnGuardar = document.getElementById('btn-guardar');
+const linkDescargarCsv = document.getElementById('link-descargar-csv');
 const aviso = document.getElementById('aviso');
 const contenedorTabla = document.getElementById('contenedor-tabla');
 const filaEncabezado = document.getElementById('fila-encabezado');
 const cuerpoTabla = document.getElementById('cuerpo-tabla');
 
-const modalExplorador = document.getElementById('modal-explorador');
-const rutaExplorador = document.getElementById('ruta-explorador');
-const listaExplorador = document.getElementById('lista-explorador');
-let campoDestino = null;
-let rutaSalidaCsv = '';
+let nombreRevisionActual = '';
 
 function mostrarAviso(texto, tipo) {
   aviso.textContent = texto;
+  aviso.classList.remove('hidden');
   aviso.className = `max-w-3xl px-4 py-3 rounded-xl text-sm ${
-    tipo === 'error' ? 'bg-[#FBE3E9] text-[#cf2d56]' :
-    tipo === 'ok' ? 'bg-[#E3F3EC] text-[#1F8A65]' :
-    'bg-[#F7ECD9] text-[#96650A]'
+    tipo === 'error' ? 'bg-[var(--badge-alerta-bg)] text-[var(--badge-alerta-text)]' :
+    tipo === 'ok' ? 'bg-[var(--badge-ok-bg)] text-[var(--badge-ok-text)]' :
+    'bg-[var(--badge-pendiente-bg)] text-[var(--badge-pendiente-text)]'
   }`;
 }
 
 function construirTabla(filas) {
-  filaEncabezado.innerHTML = COLUMNAS.map(([, etiqueta]) => `<th class="px-3 py-2 text-xs uppercase tracking-wide text-[#807D72] font-medium">${etiqueta}</th>`).join('');
+  filaEncabezado.innerHTML = COLUMNAS.map(([, etiqueta]) => `<th class="px-3 py-2 text-xs uppercase tracking-wide text-[var(--text-muted)] font-medium">${etiqueta}</th>`).join('');
   cuerpoTabla.innerHTML = '';
   for (const fila of filas) {
     const tr = document.createElement('tr');
-    tr.className = 'border-b border-[#E6E5E0] last:border-0';
+    tr.className = 'border-b border-[var(--border)] last:border-0';
     for (const [clave] of COLUMNAS) {
       const td = document.createElement('td');
       const input = document.createElement('input');
@@ -139,24 +124,32 @@ function leerFilasDeTabla() {
 }
 
 btnLeer.addEventListener('click', async () => {
-  const rutaAutorizacion = rutaAutorizacionInput.value.trim();
-  if (!rutaAutorizacion) {
-    mostrarAviso('Indica la ruta del PDF de autorización antes de continuar.', 'error');
+  const nombreRevision = nombreRevisionInput.value.trim();
+  const archivoAutorizacion = archivoAutorizacionInput.files[0];
+
+  if (!nombreRevision) {
+    mostrarAviso('Ponle un nombre a esta revisión antes de continuar.', 'error');
     return;
   }
+  if (!archivoAutorizacion) {
+    mostrarAviso('Sube el PDF de autorización antes de continuar.', 'error');
+    return;
+  }
+
   btnLeer.disabled = true;
   aviso.classList.add('hidden');
   contenedorTabla.classList.add('hidden');
+  linkDescargarCsv.classList.add('hidden');
+
+  const formulario = new FormData();
+  formulario.append('nombre_lote', nombreRevision);
+  formulario.append('pdf_autorizacion', archivoAutorizacion);
+  if (archivoCedulasInput.files[0]) {
+    formulario.append('pdf_cedulas', archivoCedulasInput.files[0]);
+  }
 
   try {
-    const resp = await fetch('/api/preparar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ruta_autorizacion: rutaAutorizacion,
-        ruta_cedulas: rutaCedulasInput.value.trim(),
-      }),
-    });
+    const resp = await fetch('/api/preparar', { method: 'POST', body: formulario });
     const datos = await resp.json();
     btnLeer.disabled = false;
 
@@ -165,7 +158,7 @@ btnLeer.addEventListener('click', async () => {
       return;
     }
 
-    rutaSalidaCsv = datos.ruta_salida_csv;
+    nombreRevisionActual = datos.nombre_lote;
     construirTabla(datos.filas);
 
     if (datos.total_revisar > 0) {
@@ -185,7 +178,7 @@ btnGuardar.addEventListener('click', async () => {
   const resp = await fetch('/api/guardar-csv', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ruta_csv: rutaSalidaCsv, filas }),
+    body: JSON.stringify({ nombre_lote: nombreRevisionActual, filas }),
   });
   const datos = await resp.json();
   btnGuardar.disabled = false;
@@ -194,53 +187,9 @@ btnGuardar.addEventListener('click', async () => {
     mostrarAviso(datos.error, 'error');
     return;
   }
-  mostrarAviso(`Guardado en: ${datos.ruta_csv}. Ya puedes ir a "Ejecutar verificaciones" y seleccionar este CSV.`, 'ok');
+  linkDescargarCsv.href = `/api/lote/${encodeURIComponent(datos.nombre_lote)}/descargar?archivo=${encodeURIComponent('personas_preparadas.csv')}`;
+  linkDescargarCsv.classList.remove('hidden');
+  mostrarAviso('Guardado. Ya puedes ir a "Ejecutar verificaciones" y elegir esta revisión de tu lista, o descargar el CSV.', 'ok');
 });
-
-// --- Explorador de archivos (reutilizado para ambos campos, filtrando por PDF) ---
-async function abrirExplorador(ruta) {
-  const resp = await fetch(`/api/navegar?ruta=${encodeURIComponent(ruta || '')}&extensiones=pdf`);
-  const datos = await resp.json();
-  if (datos.error) {
-    alert(datos.error);
-    return;
-  }
-  rutaExplorador.textContent = datos.ruta_actual;
-  listaExplorador.innerHTML = '';
-
-  if (datos.ruta_padre) {
-    const fila = document.createElement('div');
-    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm text-[#807D72]';
-    fila.textContent = '.. (subir un nivel)';
-    fila.onclick = () => abrirExplorador(datos.ruta_padre);
-    listaExplorador.appendChild(fila);
-  }
-  for (const carpeta of datos.carpetas) {
-    const fila = document.createElement('div');
-    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm';
-    fila.textContent = carpeta;
-    fila.onclick = () => abrirExplorador(`${datos.ruta_actual}/${carpeta}`);
-    listaExplorador.appendChild(fila);
-  }
-  for (const archivo of datos.archivos) {
-    const fila = document.createElement('div');
-    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#FBE3E9] cursor-pointer text-sm text-[#26251E] font-medium';
-    fila.textContent = archivo;
-    fila.onclick = () => {
-      if (campoDestino) document.getElementById(campoDestino).value = `${datos.ruta_actual}/${archivo}`;
-      modalExplorador.classList.add('hidden');
-    };
-    listaExplorador.appendChild(fila);
-  }
-}
-
-document.querySelectorAll('.btn-buscar').forEach(boton => {
-  boton.addEventListener('click', () => {
-    campoDestino = boton.dataset.campo;
-    modalExplorador.classList.remove('hidden');
-    abrirExplorador('');
-  });
-});
-document.getElementById('btn-cerrar-explorador').addEventListener('click', () => modalExplorador.classList.add('hidden'));
 </script>
 {% endblock %}

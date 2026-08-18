@@ -5,55 +5,32 @@
 {% block contenido %}
   <div class="h-full overflow-y-auto p-6 flex flex-col gap-5">
 
-    <div class="bg-white border border-[#E6E5E0] rounded-xl p-4 flex gap-2 max-w-3xl">
-      <input id="carpeta-raiz" type="text" placeholder="Carpeta raíz de la convocatoria (ej. REV_TEC_ADM_CIRCULA)"
-             class="flex-1 min-w-0 border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs mono focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
-      <button id="btn-buscar-carpeta" type="button"
-              class="border border-[#E6E5E0] rounded-lg px-3 py-1.5 text-xs hover:bg-[#F7F7F4] transition-colors whitespace-nowrap">
-        Buscar carpeta...
-      </button>
-      <button id="btn-actualizar"
-              class="bg-[#F54E00] text-white rounded-lg px-4 py-1.5 text-xs font-medium hover:bg-[#D04200] transition-colors whitespace-nowrap">
-        Actualizar panorama
-      </button>
-    </div>
+    <p id="explicacion" class="text-sm text-[var(--text-muted)] max-w-3xl"></p>
 
     <div id="tarjetas-stats" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3"></div>
 
-    <div id="mensaje" class="text-sm text-[#807D72]">Indica la carpeta raíz y presiona "Actualizar panorama".</div>
+    <div id="mensaje" class="text-sm text-[var(--text-muted)]">Cargando...</div>
 
     <div id="lista-grupos" class="flex flex-col gap-3 pb-6"></div>
 
-  </div>
-
-  <!-- Explorador de carpetas -->
-  <div id="modal-explorador" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div class="bg-white rounded-xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden">
-      <div class="px-5 py-3 border-b border-[#E6E5E0] flex items-center justify-between gap-3">
-        <span class="font-medium text-sm shrink-0">Selecciona la carpeta</span>
-        <button id="btn-usar-carpeta" class="bg-[#F54E00] text-white rounded-lg px-3 py-1 text-xs font-medium hover:bg-[#D04200] whitespace-nowrap">Usar esta carpeta</button>
-        <button id="btn-cerrar-explorador" class="text-[#807D72] hover:text-[#26251E]">✕</button>
-      </div>
-      <div id="ruta-explorador" class="px-5 py-2 text-xs mono text-[#807D72] border-b border-[#E6E5E0] break-all"></div>
-      <div id="lista-explorador" class="flex-1 overflow-y-auto p-2"></div>
-    </div>
   </div>
 {% endblock %}
 
 {% block script %}
 <script>
-const carpetaRaizInput = document.getElementById('carpeta-raiz');
-const btnActualizar = document.getElementById('btn-actualizar');
+const USUARIO_ACTUAL = {{ usuario | tojson }};
+
+const explicacion = document.getElementById('explicacion');
 const tarjetasStats = document.getElementById('tarjetas-stats');
 const mensaje = document.getElementById('mensaje');
 const listaGrupos = document.getElementById('lista-grupos');
 
 function insignia(texto, tipo) {
   const colores = {
-    ok: 'background:#E3F3EC;color:#1F8A65;',
-    pendiente: 'background:#F7ECD9;color:#96650A;',
-    alerta: 'background:#FBE3E9;color:#cf2d56;',
-    neutro: 'background:#E6E5E0;color:#26251E;',
+    ok: 'background:var(--badge-ok-bg);color:var(--badge-ok-text);',
+    pendiente: 'background:var(--badge-pendiente-bg);color:var(--badge-pendiente-text);',
+    alerta: 'background:var(--badge-alerta-bg);color:var(--badge-alerta-text);',
+    neutro: 'background:var(--border);color:var(--text-main);',
   };
   return `<span class="insignia" style="${colores[tipo]}">${texto}</span>`;
 }
@@ -64,30 +41,59 @@ function resumenEntidad(entidad) {
   return insignia(`En curso ${entidad.ok}/${entidad.total}`, 'pendiente');
 }
 
+function celdaEstado(estado) {
+  if (estado === 'ok') return insignia('OK', 'ok');
+  if (estado === 'alerta') return insignia('Alerta', 'alerta');
+  return '<span class="text-[var(--text-muted)]">—</span>';
+}
+
+function tablaPersonas(grupo) {
+  const codigos = Object.keys(grupo.entidades);
+  let filasEncabezado = codigos.map(c => `<th class="px-2 py-1.5 text-left font-medium">${grupo.entidades[c].etiqueta}</th>`).join('');
+  let filas = grupo.personas.map(persona => `
+    <tr class="border-t border-[var(--border)]">
+      <td class="px-2 py-1.5">${persona.nombre}</td>
+      <td class="px-2 py-1.5 text-[var(--text-muted)] mono">${persona.doc}</td>
+      ${codigos.map(c => `<td class="px-2 py-1.5">${celdaEstado(persona.estados[c])}</td>`).join('')}
+    </tr>`).join('');
+  return `
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs border-collapse">
+        <thead class="bg-[var(--bg-page)]"><tr>
+          <th class="px-2 py-1.5 text-left font-medium">Persona</th>
+          <th class="px-2 py-1.5 text-left font-medium">Documento</th>
+          ${filasEncabezado}
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>`;
+}
+
 function tarjetaStat(etiqueta, valor, color) {
   return `
-    <div class="bg-white border-l-4 rounded-xl p-4" style="border-color:${color}">
-      <div class="text-xs uppercase tracking-wide text-[#807D72] mb-1">${etiqueta}</div>
+    <div class="bg-[var(--bg-card)] border-l-4 rounded-xl p-4" style="border-color:${color}">
+      <div class="text-xs uppercase tracking-wide text-[var(--text-muted)] mb-1">${etiqueta}</div>
       <div class="text-2xl font-medium">${valor}</div>
     </div>`;
 }
 
-async function actualizarPanorama() {
-  const carpetaRaiz = carpetaRaizInput.value.trim();
-  if (!carpetaRaiz) {
-    mensaje.textContent = 'Indica la carpeta raíz antes de actualizar.';
-    return;
-  }
-  mensaje.textContent = 'Buscando...';
+async function cargarPanorama() {
+  mensaje.textContent = 'Cargando...';
   tarjetasStats.classList.add('hidden');
   listaGrupos.innerHTML = '';
 
-  const resp = await fetch(`/api/panorama?carpeta_raiz=${encodeURIComponent(carpetaRaiz)}`);
+  const resp = await fetch('/api/panorama');
   const datos = await resp.json();
   const grupos = datos.grupos || [];
 
+  explicacion.textContent = datos.es_admin
+    ? 'Como administrador ves un resumen del progreso de todo el equipo (solo cifras, no los archivos de cada quien).'
+    : 'Aquí ves el progreso de tus propias revisiones.';
+
   if (grupos.length === 0) {
-    mensaje.textContent = 'No se encontró ningún PDF de autorización (AUT_CONS_ANTEC.pdf) dentro de esa carpeta.';
+    mensaje.textContent = datos.es_admin
+      ? 'Todavía nadie del equipo ha preparado una revisión.'
+      : 'Todavía no has preparado ninguna revisión. Ve a "Preparar personas" para empezar.';
     return;
   }
   mensaje.textContent = '';
@@ -97,93 +103,64 @@ async function actualizarPanorama() {
   const conAlerta = grupos.filter(g => g.entidades && Object.values(g.entidades).some(e => e.alertas > 0)).length;
 
   tarjetasStats.innerHTML =
-    tarjetaStat('Postulantes / grupos', grupos.length, '#26251E') +
-    tarjetaStat('Personas en total', totalPersonas, '#807D72') +
-    tarjetaStat('Sin preparar todavía', sinPreparar, '#96650A') +
-    tarjetaStat('Con alguna alerta', conAlerta, '#cf2d56');
+    tarjetaStat('Revisiones', grupos.length, 'var(--text-main)') +
+    tarjetaStat('Personas en total', totalPersonas, 'var(--text-muted)') +
+    tarjetaStat('Sin preparar todavía', sinPreparar, 'var(--badge-pendiente-text)') +
+    tarjetaStat('Con alguna alerta', conAlerta, 'var(--badge-alerta-text)');
   tarjetasStats.classList.remove('hidden');
 
   for (const grupo of grupos) {
     const tarjeta = document.createElement('div');
-    tarjeta.className = 'bg-white border border-[#E6E5E0] rounded-xl p-4 flex flex-col gap-2';
+    tarjeta.className = 'bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-2';
 
+    const esPropio = grupo.propietario === USUARIO_ACTUAL;
     let contenido = `<div class="flex items-center justify-between">
-      <div class="font-medium text-sm">${grupo.nombre}</div>
-      <button class="btn-abrir-carpeta text-xs text-[#807D72] hover:text-[#26251E] hover:underline" data-ruta="${grupo.ruta}">Abrir carpeta</button>
+      <div class="font-medium text-sm">${grupo.nombre}${datos.es_admin ? ` <span class="text-xs font-normal text-[var(--text-muted)]">(${grupo.propietario})</span>` : ''}</div>
+      ${esPropio ? `<a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-zip" class="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">Descargar (.zip)</a>` : ''}
     </div>`;
 
     if (!grupo.preparado) {
-      contenido += `<div class="text-xs text-[#807D72]">Sin preparar todavía (falta correr "Preparar personas").</div>`;
+      contenido += `<div class="text-xs text-[var(--text-muted)]">Sin preparar todavía (falta correr "Preparar personas").</div>`;
     } else if (grupo.error) {
-      contenido += `<div class="text-xs text-[#cf2d56]">${grupo.error}</div>`;
+      contenido += `<div class="text-xs text-[var(--badge-alerta-text)]">${grupo.error}</div>`;
     } else {
       let fila = `<div class="flex flex-wrap items-center gap-4 text-xs">
-        <span class="text-[#807D72]">${grupo.total_personas} persona(s)</span>`;
+        <span class="text-[var(--text-muted)]">${grupo.total_personas} persona(s)</span>`;
       if (grupo.pendientes_revision > 0) {
         fila += insignia(`${grupo.pendientes_revision} por revisar en el CSV`, 'alerta');
       }
       for (const entidad of Object.values(grupo.entidades)) {
-        fila += `<span class="flex items-center gap-1.5"><span class="text-[#807D72]">${entidad.etiqueta}</span>${resumenEntidad(entidad)}</span>`;
+        fila += `<span class="flex items-center gap-1.5"><span class="text-[var(--text-muted)]">${entidad.etiqueta}</span>${resumenEntidad(entidad)}</span>`;
       }
       fila += `</div>`;
       contenido += fila;
+
+      if (grupo.personas && grupo.personas.length > 0) {
+        contenido += `<button class="btn-ver-personas self-start text-xs text-[var(--accent)] hover:underline mt-1">Ver personas y detalle por verificación</button>`;
+        contenido += `<div class="hidden detalle-personas mt-1 border border-[var(--border)] rounded-lg overflow-hidden"></div>`;
+      }
     }
 
     tarjeta.innerHTML = contenido;
     listaGrupos.appendChild(tarjeta);
-    tarjeta.querySelector('.btn-abrir-carpeta').addEventListener('click', async (evento) => {
-      await fetch('/api/abrir-carpeta', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ruta: evento.target.dataset.ruta }),
+
+    const btnVerPersonas = tarjeta.querySelector('.btn-ver-personas');
+    if (btnVerPersonas) {
+      const detalle = tarjeta.querySelector('.detalle-personas');
+      let cargado = false;
+      btnVerPersonas.addEventListener('click', () => {
+        if (!cargado) {
+          detalle.innerHTML = tablaPersonas(grupo);
+          cargado = true;
+        }
+        const visible = !detalle.classList.contains('hidden');
+        detalle.classList.toggle('hidden', visible);
+        btnVerPersonas.textContent = visible ? 'Ver personas y detalle por verificación' : 'Ocultar detalle';
       });
-    });
+    }
   }
 }
 
-btnActualizar.addEventListener('click', actualizarPanorama);
-
-// --- Explorador de carpetas ---
-const modalExplorador = document.getElementById('modal-explorador');
-const rutaExplorador = document.getElementById('ruta-explorador');
-const listaExplorador = document.getElementById('lista-explorador');
-let carpetaSeleccionada = '';
-
-async function abrirExplorador(ruta) {
-  const resp = await fetch(`/api/navegar?ruta=${encodeURIComponent(ruta || '')}&extensiones=`);
-  const datos = await resp.json();
-  if (datos.error) {
-    alert(datos.error);
-    return;
-  }
-  carpetaSeleccionada = datos.ruta_actual;
-  rutaExplorador.textContent = datos.ruta_actual;
-  listaExplorador.innerHTML = '';
-
-  if (datos.ruta_padre) {
-    const fila = document.createElement('div');
-    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm text-[#807D72]';
-    fila.textContent = '.. (subir un nivel)';
-    fila.onclick = () => abrirExplorador(datos.ruta_padre);
-    listaExplorador.appendChild(fila);
-  }
-  for (const carpeta of datos.carpetas) {
-    const fila = document.createElement('div');
-    fila.className = 'px-3 py-2 rounded-lg hover:bg-[#F7F7F4] cursor-pointer text-sm';
-    fila.textContent = carpeta;
-    fila.onclick = () => abrirExplorador(`${datos.ruta_actual}/${carpeta}`);
-    listaExplorador.appendChild(fila);
-  }
-}
-
-document.getElementById('btn-buscar-carpeta').addEventListener('click', () => {
-  modalExplorador.classList.remove('hidden');
-  abrirExplorador(carpetaRaizInput.value.trim());
-});
-document.getElementById('btn-cerrar-explorador').addEventListener('click', () => modalExplorador.classList.add('hidden'));
-document.getElementById('btn-usar-carpeta').addEventListener('click', () => {
-  carpetaRaizInput.value = carpetaSeleccionada;
-  modalExplorador.classList.add('hidden');
-});
+cargarPanorama();
 </script>
 {% endblock %}

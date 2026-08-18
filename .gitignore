@@ -11,6 +11,10 @@ env/
 panel/usuarios.json
 panel/secret.key
 
+# Espacio privado de cada usuario del panel: PDFs que suben, CSV que
+# generan y certificados que descargan. Nunca va a git.
+panel/espacios_usuario/
+
 # Accesos directos de Windows creados localmente (rutas absolutas propias
 # de cada equipo, no tiene sentido llevarlos a git)
 *.lnk
