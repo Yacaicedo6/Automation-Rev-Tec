@@ -139,6 +139,16 @@ VERIFICACIONES = {
     "dsex": ("Delitos sexuales - inhabilidad", "automation_DelitosSexuales.py"),
 }
 
+# Prefijo corto para el .txt de log de cada verificación, igual al que usan
+# los automation_*.py para sus carpetas Cert_XXX.
+CODIGOS_ARCHIVO_LOG = {
+    "rnmc": "RNMC",
+    "contraloria": "CONT",
+    "procuraduria": "PROC",
+    "judicial": "JUD",
+    "dsex": "DSEX",
+}
+
 app = FastAPI(title="Panel de revisión técnico-administrativa")
 app.add_middleware(SessionMiddleware, secret_key=CLAVE_SECRETA, max_age=60 * 60 * 12)
 app.mount("/static", StaticFiles(directory=str(DIRECTORIO_PANEL / "static")), name="static")
@@ -188,6 +198,17 @@ cupos = AdministradorCupos(MAX_SESIONES_PARALELAS)
 # Subproceso en curso por usuario (para que "Detener" pare el de esa
 # persona específica, no el de cualquiera).
 PROCESOS_ACTIVOS: dict[str, asyncio.subprocess.Process] = {}
+
+
+def _formatear_duracion(delta) -> str:
+    segundos_totales = int(delta.total_seconds())
+    horas, resto = divmod(segundos_totales, 3600)
+    minutos, segundos = divmod(resto, 60)
+    if horas:
+        return f"{horas}h {minutos:02d}m {segundos:02d}s"
+    if minutos:
+        return f"{minutos}m {segundos:02d}s"
+    return f"{segundos}s"
 
 
 def _pagina_o_login(request: Request):
@@ -513,6 +534,7 @@ def listar_mis_lotes(request: Request):
             continue
         ruta_csv = carpeta / "personas_preparadas.csv"
         ruta_pdf = carpeta / "AUT_CONS_ANTEC.pdf"
+        ruta_excel = next((f for f in (carpeta / "POSTULANTES.xlsx", carpeta / "POSTULANTES.xls") if f.is_file()), None)
         total_personas = None
         if ruta_csv.is_file():
             try:
@@ -522,11 +544,14 @@ def listar_mis_lotes(request: Request):
 
         # Para "Ejecutar verificaciones": si ya hay CSV preparado se usa ese
         # (trae las correcciones manuales); si no, se puede correr directo
-        # sobre el PDF de autorización -- los scripts saben leer cualquiera.
+        # sobre el PDF de autorización o, en su defecto, sobre el Excel de
+        # postulantes subido directo -- los scripts saben leer cualquiera.
         if ruta_csv.is_file():
             archivo_para_verificar = ruta_csv.name
         elif ruta_pdf.is_file():
             archivo_para_verificar = ruta_pdf.name
+        elif ruta_excel is not None:
+            archivo_para_verificar = ruta_excel.name
         else:
             archivo_para_verificar = None
 
@@ -535,6 +560,7 @@ def listar_mis_lotes(request: Request):
             "tiene_csv": ruta_csv.is_file(),
             "total_personas": total_personas,
             "tiene_autorizacion": ruta_pdf.is_file(),
+            "tiene_excel": ruta_excel is not None,
             "archivo_para_verificar": archivo_para_verificar,
         })
     return {"lotes": lotes}
@@ -553,7 +579,7 @@ def listar_archivos_lote(request: Request, nombre_lote: str):
     archivos = [
         {"ruta_relativa": str(ruta.relative_to(carpeta_lote)), "tamano_kb": round(ruta.stat().st_size / 1024, 1)}
         for ruta in sorted(carpeta_lote.rglob("*"))
-        if ruta.is_file()
+        if ruta.is_file() and ruta.name not in ARCHIVOS_ENTRADA_OCULTOS
     ]
     return {"nombre_lote": carpeta_lote.name, "archivos": archivos}
 
@@ -588,7 +614,7 @@ def descargar_zip_lote(request: Request, nombre_lote: str):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_archivo:
         for ruta in carpeta_lote.rglob("*"):
-            if ruta.is_file():
+            if ruta.is_file() and ruta.name not in ARCHIVOS_ENTRADA_OCULTOS:
                 zip_archivo.write(ruta, arcname=str(ruta.relative_to(carpeta_lote)))
     buffer.seek(0)
 
@@ -598,6 +624,11 @@ def descargar_zip_lote(request: Request, nombre_lote: str):
         headers={"Content-Disposition": f'attachment; filename="{carpeta_lote.name}.zip"'},
     )
 
+
+# El Excel de postulantes lo sube la misma persona (o un compañero): ya lo
+# tiene en su equipo, así que no tiene sentido ofrecerlo de nuevo entre los
+# resultados descargables -- ahí lo que sirve es el reporte de fallidos.
+ARCHIVOS_ENTRADA_OCULTOS = {"POSTULANTES.xlsx", "POSTULANTES.xls"}
 
 ENTIDADES = [
     ("RNMC", "RNMC"),
@@ -779,6 +810,30 @@ async def subir_pdf_directo(request: Request, nombre_lote: str = Form(...), pdf:
     return {"nombre_lote": carpeta_lote.name, "archivo": ruta_pdf.name}
 
 
+@app.post("/api/subir-excel-directo")
+async def subir_excel_directo(request: Request, nombre_lote: str = Form(...), excel: UploadFile = File(...)):
+    """Camino rápido: correr una verificación directo desde el Excel de
+    postulantes (Código, Nombre completo, Tipo y número de identificación,
+    Fecha de expedición) -- los scripts ya saben leer personas directo de
+    ese Excel."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _carpeta_lote(usuario, nombre_lote, crear=True)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "El nombre de la revisión no puede estar vacío."}, status_code=400)
+
+    extension = Path(excel.filename or "").suffix.lower()
+    if extension not in (".xlsx", ".xls"):
+        return JSONResponse({"error": "Debe ser un archivo de Excel (.xlsx o .xls)."}, status_code=400)
+
+    ruta_excel = carpeta_lote / f"POSTULANTES{extension}"
+    ruta_excel.write_bytes(await excel.read())
+
+    return {"nombre_lote": carpeta_lote.name, "archivo": ruta_excel.name}
+
+
 @app.post("/api/guardar-csv")
 def guardar_csv(request: Request, datos: dict = Body(...)):
     usuario, error = _api_o_401(request)
@@ -864,6 +919,14 @@ async def ejecutar_verificacion(websocket: WebSocket):
         return
 
     slot = None
+    carpeta_lote = None
+    codigo = None
+    nombre_verificacion = None
+    lineas_log: list[str] = []
+    marca_inicio = None
+    marca_fin = None
+    estado = "desconectado"
+    codigo_salida = None
     try:
         datos = await websocket.receive_json()
         codigo = datos.get("codigo")
@@ -886,10 +949,16 @@ async def ejecutar_verificacion(websocket: WebSocket):
         slot = await cupos.tomar(avisar_posicion)
         await websocket.send_json({"tipo": "cupo", "puerto_vnc": cupos.puerto_vnc(slot)})
 
-        nombre, script = VERIFICACIONES[codigo]
+        nombre_verificacion, script = VERIFICACIONES[codigo]
         ruta_script = DIRECTORIO_SCRIPTS / script
+        marca_inicio = datetime.now()
 
-        await websocket.send_json({"tipo": "log", "texto": f"=== Iniciando: {nombre} ==="})
+        for linea_encabezado in (
+            f"=== Iniciando: {nombre_verificacion} ===",
+            f"Hora de inicio: {marca_inicio.strftime('%Y-%m-%d %H:%M:%S')}",
+        ):
+            lineas_log.append(linea_encabezado)
+            await websocket.send_json({"tipo": "log", "texto": linea_encabezado})
 
         proceso = await asyncio.create_subprocess_exec(
             sys.executable, str(ruta_script), str(ruta_datos),
@@ -903,6 +972,7 @@ async def ejecutar_verificacion(websocket: WebSocket):
         assert proceso.stdout is not None
         async for linea_bytes in proceso.stdout:
             linea = linea_bytes.decode("utf-8", errors="replace").rstrip("\n")
+            lineas_log.append(linea)
             await websocket.send_json({"tipo": "log", "texto": linea})
 
         codigo_salida = await proceso.wait()
@@ -912,6 +982,15 @@ async def ejecutar_verificacion(websocket: WebSocket):
             estado = "detenido"
         else:
             estado = "error"
+
+        marca_fin = datetime.now()
+        for linea_pie in (
+            f"Hora de finalización: {marca_fin.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Tiempo de ejecución: {_formatear_duracion(marca_fin - marca_inicio)}",
+        ):
+            lineas_log.append(linea_pie)
+            await websocket.send_json({"tipo": "log", "texto": linea_pie})
+
         await websocket.send_json({"tipo": "fin", "estado": estado, "codigo": codigo_salida})
 
     except WebSocketDisconnect:
@@ -920,6 +999,25 @@ async def ejecutar_verificacion(websocket: WebSocket):
         PROCESOS_ACTIVOS.pop(usuario, None)
         if slot is not None:
             cupos.devolver(slot)
+
+        # Se guarda un .txt por verificación junto a los demás resultados de
+        # la revisión, para no depender de alcanzar a leer o copiar el
+        # registro en vivo antes de que la pantalla pase a otra cosa.
+        if carpeta_lote is not None and lineas_log:
+            try:
+                codigo_corto = CODIGOS_ARCHIVO_LOG.get(codigo, (codigo or "verificacion").upper())
+                encabezado = f"{nombre_verificacion or codigo_corto}\n"
+                pie = f"\nEstado: {estado}"
+                if codigo_salida is not None:
+                    pie += f" (código de salida {codigo_salida})"
+                # Las horas de inicio/fin y la duración ya quedan dentro de
+                # lineas_log (las mismas líneas que se ven en vivo), así que
+                # el encabezado y el pie del .txt no las repiten.
+                contenido = encabezado + "\n" + "\n".join(lineas_log) + "\n" + pie + "\n"
+                (carpeta_lote / f"Log_{codigo_corto}.txt").write_text(contenido, encoding="utf-8")
+            except Exception:
+                pass
+
         try:
             await websocket.close()
         except Exception:

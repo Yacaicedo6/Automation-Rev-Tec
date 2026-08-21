@@ -24,6 +24,7 @@
         <div class="flex gap-4 text-xs border-b border-[var(--border)]">
           <button type="button" data-fuente="revision" class="pestana-fuente activa pb-2">Usar una revisión mía</button>
           <button type="button" data-fuente="subida" class="pestana-fuente pb-2">Subir un PDF directo</button>
+          <button type="button" data-fuente="excel" class="pestana-fuente pb-2">Subir un Excel directo</button>
         </div>
 
         <div id="bloque-fuente-revision" class="flex flex-col gap-2">
@@ -39,6 +40,15 @@
                  class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
           <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
           <input id="archivo-subida" type="file" accept="application/pdf"
+                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+        </div>
+
+        <div id="bloque-fuente-excel" class="hidden flex-col gap-2">
+          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+          <input id="nombre-revision-excel" type="text" placeholder="Ej: Festival Mundial de Salsa"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
+          <input id="archivo-excel" type="file" accept=".xlsx,.xls"
                  class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
         </div>
 
@@ -102,8 +112,11 @@ const btnDetener = document.getElementById('btn-detener');
 const selectRevision = document.getElementById('select-revision');
 const nombreRevisionSubidaInput = document.getElementById('nombre-revision-subida');
 const archivoSubidaInput = document.getElementById('archivo-subida');
+const nombreRevisionExcelInput = document.getElementById('nombre-revision-excel');
+const archivoExcelInput = document.getElementById('archivo-excel');
 const bloqueFuenteRevision = document.getElementById('bloque-fuente-revision');
 const bloqueFuenteSubida = document.getElementById('bloque-fuente-subida');
+const bloqueFuenteExcel = document.getElementById('bloque-fuente-excel');
 const logEntries = document.getElementById('log-entries');
 const estadoConexion = document.getElementById('estado-conexion');
 const visorVacio = document.getElementById('visor-vacio');
@@ -124,6 +137,7 @@ document.querySelectorAll('.pestana-fuente').forEach(boton => {
     document.querySelectorAll('.pestana-fuente').forEach(b => b.classList.toggle('activa', b === boton));
     bloqueFuenteRevision.classList.toggle('hidden', fuenteActiva !== 'revision');
     bloqueFuenteSubida.classList.toggle('hidden', fuenteActiva !== 'subida');
+    bloqueFuenteExcel.classList.toggle('hidden', fuenteActiva !== 'excel');
   });
 });
 
@@ -167,7 +181,7 @@ async function cargarMisRevisiones() {
     opcion.value = revision.nombre_lote;
     const detalle = revision.tiene_csv
       ? `${revision.total_personas ?? '?'} persona(s), CSV preparado`
-      : (revision.tiene_autorizacion ? 'solo PDF de autorización' : 'vacía');
+      : (revision.tiene_autorizacion ? 'solo PDF de autorización' : (revision.tiene_excel ? 'solo Excel de postulantes' : 'vacía'));
     opcion.textContent = `${revision.nombre_lote} (${detalle})`;
     opcion.disabled = !revision.archivo_para_verificar;
     selectRevision.appendChild(opcion);
@@ -243,7 +257,7 @@ btnIniciar.addEventListener('click', async () => {
       return;
     }
     archivo = revision.archivo_para_verificar;
-  } else {
+  } else if (fuenteActiva === 'subida') {
     const nombreRevisionNueva = nombreRevisionSubidaInput.value.trim();
     const archivoPdf = archivoSubidaInput.files[0];
     if (!nombreRevisionNueva || !archivoPdf) {
@@ -255,6 +269,27 @@ btnIniciar.addEventListener('click', async () => {
     formulario.append('nombre_lote', nombreRevisionNueva);
     formulario.append('pdf', archivoPdf);
     const resp = await fetch('/api/subir-pdf-directo', { method: 'POST', body: formulario });
+    const datos = await resp.json();
+    if (datos.error) {
+      agregarLinea(`ERROR: ${datos.error}`);
+      btnIniciar.disabled = false;
+      return;
+    }
+    nombreRevision = datos.nombre_lote;
+    archivo = datos.archivo;
+    await cargarMisRevisiones();
+  } else {
+    const nombreRevisionNueva = nombreRevisionExcelInput.value.trim();
+    const archivoExcel = archivoExcelInput.files[0];
+    if (!nombreRevisionNueva || !archivoExcel) {
+      agregarLinea('ERROR: ponle un nombre a la revisión y sube el Excel de postulantes.');
+      return;
+    }
+    btnIniciar.disabled = true;
+    const formulario = new FormData();
+    formulario.append('nombre_lote', nombreRevisionNueva);
+    formulario.append('excel', archivoExcel);
+    const resp = await fetch('/api/subir-excel-directo', { method: 'POST', body: formulario });
     const datos = await resp.json();
     if (datos.error) {
       agregarLinea(`ERROR: ${datos.error}`);
