@@ -121,7 +121,86 @@ def circuito_abierto(fallos_consecutivos, nombre_entidad="Judicial de la Policí
         return True
     return False
 
-def leer_personas(ruta_excel):
+def _quitar_acentos(texto):
+    return texto.translate(str.maketrans("ÁÉÍÓÚáéíóúÑñ", "AEIOUaeiouNn"))
+
+def _columna_que_contiene(columnas, *fragmentos):
+    for columna in columnas:
+        normalizada = _quitar_acentos(str(columna)).upper()
+        if all(fragmento in normalizada for fragmento in fragmentos):
+            return columna
+    return None
+
+def _leer_personas_desde_excel_simple(ruta_excel):
+    """
+    Lee la plantilla simple de postulantes (Código, Nombre Completo, Número
+    de Identificación, Fecha de expedición y, si la trae, Tipo de
+    documento), usada desde la convocatoria del Mundial de Salsa en
+    adelante. Si el archivo no tiene estas columnas -por ejemplo, es la
+    plantilla larga "ANEXO TÉCNICO" de antes- devuelve None para que se
+    intente con leer_personas_excel_legado.
+    """
+    try:
+        encabezados = pd.read_excel(ruta_excel, sheet_name=0, header=0, nrows=0)
+    except Exception:
+        return None
+    encabezados.columns = encabezados.columns.str.strip()
+    columnas = list(encabezados.columns)
+
+    col_codigo = _columna_que_contiene(columnas, "CODIGO")
+    col_tipo_doc = _columna_que_contiene(columnas, "TIPO")
+    col_nombre = _columna_que_contiene(columnas, "NOMBRE")
+    # "Tipo de identificación" y "Número de identificación" comparten la
+    # palabra "identificación", así que primero se busca la combinación
+    # "número" + "identificación" y solo si no aparece se cae a una
+    # búsqueda más laxa, siempre excluyendo la columna ya usada como tipo.
+    columnas_sin_tipo = [c for c in columnas if c != col_tipo_doc]
+    col_doc = (
+        _columna_que_contiene(columnas_sin_tipo, "NUMERO", "IDENTIFICACION")
+        or _columna_que_contiene(columnas_sin_tipo, "IDENTIFICACION")
+        or _columna_que_contiene(columnas_sin_tipo, "DOCUMENTO")
+    )
+    col_fecha = _columna_que_contiene(columnas, "FECHA")
+
+    if not (col_codigo and col_nombre and col_doc and col_fecha):
+        return None
+
+    try:
+        # El código y el número de documento se leen como texto para no
+        # perder ceros a la izquierda (Excel los tomaría como número).
+        df = pd.read_excel(ruta_excel, sheet_name=0, header=0, dtype={col_codigo: str, col_doc: str})
+    except Exception:
+        return None
+    df.columns = df.columns.str.strip()
+    df = df.dropna(subset=[col_doc])
+
+    filas = []
+    for _, fila in df.iterrows():
+        nombre_completo = str(fila[col_nombre]).strip() if pd.notna(fila[col_nombre]) else ""
+        tokens = nombre_completo.split()
+        primer_nombre = tokens[0] if tokens else ""
+        resto_nombre = " ".join(tokens[1:])
+
+        try:
+            fecha_valor = pd.to_datetime(fila[col_fecha], dayfirst=True)
+        except Exception:
+            fecha_valor = fila[col_fecha]
+
+        filas.append({
+            'CODIGO': str(fila[col_codigo]).strip() if pd.notna(fila[col_codigo]) else "",
+            '# DOC. IDENTIDAD': str(fila[col_doc]).strip(),
+            'TIPO DOCUMENTO \n(RC - TI - PP)': str(fila[col_tipo_doc]).strip() if col_tipo_doc and pd.notna(fila[col_tipo_doc]) else 'CC',
+            'PRIMER NOMBRE': primer_nombre,
+            'SEGUNDO NOMBRE': "",
+            'PRIMER APELLIDO': resto_nombre,
+            'SEGUNDO APELLIDO': "",
+            'FECHA DE EXPEDICION (DD/MM/AA)': fecha_valor,
+        })
+
+    resultado = pd.DataFrame(filas)
+    return resultado.drop_duplicates(subset=['# DOC. IDENTIDAD']) if not resultado.empty else resultado
+
+def leer_personas_excel_legado(ruta_excel):
     """
     Lee todas las hojas del libro y combina las filas con un documento de
     identidad válido. Algunas plantillas separan a las personas en varias
@@ -162,6 +241,61 @@ def leer_personas(ruta_excel):
     combinado = combinado.sort_values('_completitud', ascending=False)
     combinado = combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'], keep='first')
     return combinado.drop(columns=['_completitud'])
+
+def leer_personas(ruta_excel):
+    """
+    Lee el Excel de postulantes: primero intenta la plantilla simple
+    (Código, Nombre Completo, Número de Identificación, Fecha de
+    expedición); si no calza con esas columnas, cae a la plantilla larga
+    "ANEXO TÉCNICO" de convocatorias anteriores.
+    """
+    df_simple = _leer_personas_desde_excel_simple(ruta_excel)
+    if df_simple is not None and not df_simple.empty:
+        return df_simple
+    return leer_personas_excel_legado(ruta_excel)
+
+
+def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
+    """
+    Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
+    el portal, tiempo de espera agotado, error inesperado) y los deja en un
+    Excel aparte (Fallidos_<ENTIDAD>.xlsx), para que sea fácil ver a quién
+    hay que volver a intentarle sin mezclarlos con la gente que sí tuvo una
+    alerta real.
+    """
+    ruta_fallidos = os.path.join(directorio_base, f"Fallidos_{codigo_entidad}.xlsx")
+
+    if not documentos_fallidos:
+        if os.path.exists(ruta_fallidos):
+            os.remove(ruta_fallidos)
+        return
+
+    filas_fallidos = []
+    for _, fila_persona in df.iterrows():
+        doc_persona = str(fila_persona['# DOC. IDENTIDAD']).strip()
+        if doc_persona.endswith('.0'):
+            doc_persona = doc_persona[:-2]
+        if doc_persona not in documentos_fallidos:
+            continue
+
+        p_nombre_f = str(fila_persona['PRIMER NOMBRE']) if pd.notna(fila_persona['PRIMER NOMBRE']) else ""
+        s_nombre_f = str(fila_persona['SEGUNDO NOMBRE']) if pd.notna(fila_persona['SEGUNDO NOMBRE']) else ""
+        p_apellido_f = str(fila_persona['PRIMER APELLIDO']) if pd.notna(fila_persona['PRIMER APELLIDO']) else ""
+        s_apellido_f = str(fila_persona['SEGUNDO APELLIDO']) if pd.notna(fila_persona['SEGUNDO APELLIDO']) else ""
+        nombre_completo_f = f"{p_nombre_f} {s_nombre_f} {p_apellido_f} {s_apellido_f}".replace("  ", " ").strip()
+
+        filas_fallidos.append({
+            "CODIGO": fila_persona.get('CODIGO', '') if 'CODIGO' in df.columns else "",
+            "NOMBRE": nombre_completo_f,
+            "DOCUMENTO": doc_persona,
+            "MOTIVO": documentos_fallidos[doc_persona],
+        })
+
+    try:
+        pd.DataFrame(filas_fallidos).to_excel(ruta_fallidos, index=False)
+        print(f"\nSe guardó el listado de personas con consulta fallida en:\n{ruta_fallidos}")
+    except Exception as error_reporte:
+        print(f"Aviso: no se pudo generar el Excel de fallidos: {error_reporte}")
 
 def leer_personas_desde_pdf(ruta_pdf):
     """
@@ -274,6 +408,9 @@ if df.empty:
 
 lista_alertas_finales = alertas_historicas.copy()
 lista_inconclusos = []
+# Documento -> motivo, para el Excel de personas a las que falló la
+# consulta (distinto de una alerta real: aquí no se logró determinar nada).
+documentos_fallidos = {}
 
 print("Comprobando disponibilidad del portal Judicial de la Policía...")
 if not verificar_portal_disponible(URL_JUDICIAL):
@@ -331,7 +468,9 @@ try:
         # También se reconocen la carpeta y el nombre largos de antes de este
         # cambio, para no volver a descargar lo que ya se había guardado ahí.
         primer_nombre_archivo = "".join(c for c in p_nombre.strip() if c.isalnum()) or "SN"
-        nombre_archivo_esperado = f"JUD_{primer_nombre_archivo}_{num_doc}.pdf"
+        codigo_val = row.get('CODIGO') if 'CODIGO' in df.columns else None
+        prefijo_archivo = "".join(c for c in str(codigo_val).strip() if c.isalnum()) if pd.notna(codigo_val) and str(codigo_val).strip() else "JUD"
+        nombre_archivo_esperado = f"{prefijo_archivo}_{primer_nombre_archivo}_{num_doc}.pdf"
         ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
         ruta_esperada_inconcluso = os.path.join(carpeta_inconclusos, nombre_archivo_esperado)
@@ -501,6 +640,7 @@ try:
                     ruta_final_guardado = ruta_esperada_inconcluso
                     print("Atención: el portal no devolvió ningún resultado (posible caída o lentitud del servicio). Se guarda para reintentar más tarde...")
                     lista_inconclusos.append(nombre_archivo_esperado.replace(".pdf", ""))
+                    documentos_fallidos[num_doc] = "Tiempo de espera agotado (posible caída o lentitud del portal)"
                 else:
                     ruta_final_guardado = ruta_esperada_inhab
                     print("Atención: se detectó un posible asunto pendiente. Se guarda en la carpeta de alertas...")
@@ -524,6 +664,7 @@ try:
 
             except Exception as e:
                 print(f"Error inesperado al analizar o generar el PDF: {e}")
+                documentos_fallidos[num_doc] = f"Error inesperado: {e}"
                 errores_no_manejados += 1
                 fallos_consecutivos += 1
                 if circuito_abierto(fallos_consecutivos):
@@ -532,6 +673,7 @@ try:
         except Exception as e:
             print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
             print("Se salta a la siguiente persona...")
+            documentos_fallidos[num_doc] = f"Error inesperado: {e}"
             errores_no_manejados += 1
             fallos_consecutivos += 1
             if circuito_abierto(fallos_consecutivos):
@@ -560,6 +702,8 @@ finally:
         for inconcluso in lista_inconclusos:
             print(f"   - {inconcluso}")
         print(f"Quedaron en:\n{carpeta_inconclusos}\nVuelve a correr el script más tarde para reintentarlas.")
+
+    _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, "JUD")
 
     print("="*50)
     print("Cerrando navegador...")
