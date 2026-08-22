@@ -229,6 +229,20 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _pitido(frecuencia, duracion_ms):
+    """
+    Pitido audible para quien esté frente al equipo cuando hay una alerta.
+    winsound solo existe en Windows -- el panel corre este script dentro de
+    WSL (Linux), así que ahí simplemente se ignora en silencio en vez de
+    tumbar el guardado de la alerta real con un ModuleNotFoundError.
+    """
+    try:
+        import winsound
+        winsound.Beep(frecuencia, duracion_ms)
+    except Exception:
+        pass
+
+
 def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
     """
     Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
@@ -480,16 +494,22 @@ try:
                 pass
 
             print("Datos llenados. Consultando...")
-            # El portal es ASP.NET clásico: cambiar el tipo de documento o la fecha puede
-            # recargar parte de la página, así que esperamos a que el botón esté listo
-            # en vez de buscarlo de inmediato.
-            btn_buscar = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder3_btnConsultar2")))
-            driver.execute_script("arguments[0].click();", btn_buscar)
 
             # ==========================================
             # 4. ANÁLISIS DE RESULTADOS Y GENERACIÓN VÍA CDP
             # ==========================================
             try:
+                # El portal es ASP.NET clásico: cambiar el tipo de documento o la fecha puede
+                # recargar parte de la página, así que esperamos a que el botón esté listo
+                # en vez de buscarlo de inmediato. El clic también queda dentro de este
+                # bloque (no antes) porque con cédula de extranjería el formulario cambia
+                # -no pide fecha de expedición- y el botón puede tardar más o comportarse
+                # distinto; así cualquier falla aquí se trata igual que un timeout del
+                # portal (captura de pantalla + reintento) en vez de perderse en un error
+                # genérico sin diagnóstico.
+                btn_buscar = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_ContentPlaceHolder3_btnConsultar2")))
+                driver.execute_script("arguments[0].click();", btn_buscar)
+
                 # Esperamos lo que aparezca primero: el resultado ("informa:") o un modal de error del portal
                 wait_resultado.until(lambda d: "informa:" in d.find_element(By.TAG_NAME, "body").text.lower()
                                       or "error" in d.find_element(By.TAG_NAME, "body").text.lower())
@@ -533,8 +553,7 @@ try:
                     ruta_final_guardado = ruta_esperada_inhab
                     print("Atención: se detectó una posible medida correctiva pendiente. Se guarda en la carpeta de alertas...")
                     lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                    import winsound
-                    winsound.Beep(2000, 1000)
+                    _pitido(2000, 1000)
 
                     pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
                         "printBackground": True,

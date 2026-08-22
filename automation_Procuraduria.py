@@ -292,6 +292,35 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _pitido(frecuencia, duracion_ms):
+    """
+    Pitido audible para quien esté frente al equipo cuando hay una alerta.
+    winsound solo existe en Windows -- el panel corre este script dentro de
+    WSL (Linux), así que ahí simplemente se ignora en silencio en vez de
+    tumbar el guardado de la alerta real con un ModuleNotFoundError.
+    """
+    try:
+        import winsound
+        winsound.Beep(frecuencia, duracion_ms)
+    except Exception:
+        pass
+
+
+def _pedir_respuesta_manual(mensaje):
+    """
+    Pide una respuesta escrita a mano -- pero solo si hay una consola real
+    detrás (por ejemplo, corriendo el script directo con doble clic). Si no
+    hay una terminal interactiva (como cuando el panel web lanza este
+    script como subproceso), no hay quien la escriba: en vez de colgarse
+    esperando una entrada que nunca llega, se devuelve None de una vez para
+    que la persona quede marcada como fallida y se pueda reintentar luego.
+    """
+    if not sys.stdin.isatty():
+        print("No hay una consola interactiva disponible (probablemente corriendo desde el panel web); no se puede pedir la respuesta a mano. Se salta esta persona.")
+        return None
+    return input(mensaje)
+
+
 def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
     """
     Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
@@ -558,9 +587,15 @@ try:
             respuesta_calculada = resolver_pregunta_procuraduria(label_pregunta, num_doc, p_nombre)
 
             if not respuesta_calculada:
-                import winsound
-                winsound.Beep(1000, 500)
-                respuesta_calculada = input("Pregunta desconocida. Escribe la respuesta aquí en la consola y presiona Enter: ")
+                _pitido(1000, 500)
+                respuesta_calculada = _pedir_respuesta_manual("Pregunta desconocida. Escribe la respuesta aquí en la consola y presiona Enter: ")
+                if respuesta_calculada is None:
+                    documentos_fallidos[num_doc] = "Pregunta de seguridad desconocida (sin consola interactiva para responderla a mano)"
+                    errores_no_manejados += 1
+                    fallos_consecutivos += 1
+                    if circuito_abierto(fallos_consecutivos):
+                        break
+                    continue
 
             campo_respuesta = driver.find_element(By.ID, "txtRespuestaPregunta")
             campo_respuesta.send_keys(respuesta_calculada)
@@ -591,11 +626,10 @@ try:
                     pass
 
                 if errores_visibles:
-                    import winsound
-                    winsound.Beep(1000, 500)
-                    nueva_respuesta = input("Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir persona): ")
+                    _pitido(1000, 500)
+                    nueva_respuesta = _pedir_respuesta_manual("Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir persona): ")
 
-                    if nueva_respuesta.lower() == 'saltar':
+                    if nueva_respuesta is None or nueva_respuesta.lower() == 'saltar':
                         break
 
                     campo_respuesta = driver.find_element(By.ID, "txtRespuestaPregunta")
@@ -686,8 +720,7 @@ try:
                 shutil.move(ruta_esperada_normal, ruta_esperada_inhab)
                 print("Atención: se detectó una posible sanción o inhabilidad vigente. Se movió a la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                import winsound
-                winsound.Beep(2000, 1000)
+                _pitido(2000, 1000)
 
             fallos_consecutivos = 0
 

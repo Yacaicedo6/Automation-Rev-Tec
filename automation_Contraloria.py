@@ -251,6 +251,20 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _pitido(frecuencia, duracion_ms):
+    """
+    Pitido audible para quien esté frente al equipo cuando hay una alerta.
+    winsound solo existe en Windows -- el panel corre este script dentro de
+    WSL (Linux), así que ahí simplemente se ignora en silencio en vez de
+    tumbar el guardado de la alerta real con un ModuleNotFoundError.
+    """
+    try:
+        import winsound
+        winsound.Beep(frecuencia, duracion_ms)
+    except Exception:
+        pass
+
+
 def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
     """
     Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
@@ -619,8 +633,7 @@ try:
                 ruta_final = ruta_esperada_inhab
                 print("Atención: se detectó un posible reporte como responsable fiscal. Se guarda en la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                import winsound
-                winsound.Beep(2000, 1000)
+                _pitido(2000, 1000)
 
             os.makedirs(os.path.dirname(ruta_final), exist_ok=True)
             shutil.move(ruta_descargada, ruta_final)
