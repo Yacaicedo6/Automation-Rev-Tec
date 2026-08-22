@@ -625,6 +625,69 @@ def descargar_zip_lote(request: Request, nombre_lote: str):
     )
 
 
+@app.get("/api/lote/{nombre_lote}/descargar-carpeta")
+def descargar_carpeta_lote(request: Request, nombre_lote: str, carpeta: str):
+    """Descarga solo una entidad (por ejemplo Cert_RNMC + Cert_RNMC_INHABILITADOS)
+    en vez del .zip completo de la revisión -- para no arrastrar entidades que
+    ya se descargaron antes cada vez que termina una verificación nueva."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    nombre_carpeta_seguro = _sanear_nombre(carpeta)
+    if not nombre_carpeta_seguro:
+        return JSONResponse({"error": "Carpeta no válida."}, status_code=400)
+
+    raiz = carpeta_lote.resolve()
+    subcarpetas = [
+        c for c in (carpeta_lote / nombre_carpeta_seguro, carpeta_lote / f"{nombre_carpeta_seguro}_INHABILITADOS")
+        if c.is_dir() and c.resolve().parent == raiz
+    ]
+    if not subcarpetas:
+        return JSONResponse({"error": "Esa carpeta no existe en esta revisión."}, status_code=404)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_archivo:
+        for sub in subcarpetas:
+            for ruta in sub.rglob("*"):
+                if ruta.is_file():
+                    zip_archivo.write(ruta, arcname=str(ruta.relative_to(carpeta_lote)))
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_carpeta_seguro}.zip"'},
+    )
+
+
+@app.post("/api/admin/eliminar-revision")
+def admin_eliminar_revision(request: Request, datos: dict = Body(...)):
+    """Borra la carpeta completa de una revisión -- de cualquier usuario, no
+    solo la propia. A diferencia de todo lo demás en Administración/Panorama,
+    esto sí toca datos de otra persona (aunque solo para borrarlos, nunca
+    para verlos), pensado para limpiar carpetas de prueba."""
+    usuario_actual, error = _api_o_401(request)
+    if error:
+        return error
+    if not _es_admin(usuario_actual):
+        return JSONResponse({"error": "No tienes permiso de administrador."}, status_code=403)
+
+    usuario_objetivo = (datos.get("usuario") or "").strip()
+    nombre_lote = (datos.get("nombre_lote") or "").strip()
+
+    carpeta_lote = _lote_existente(usuario_objetivo, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    shutil.rmtree(carpeta_lote)
+    return {"eliminado": True}
+
+
 # El Excel de postulantes lo sube la misma persona (o un compañero): ya lo
 # tiene en su equipo, así que no tiene sentido ofrecerlo de nuevo entre los
 # resultados descargables -- ahí lo que sirve es el reporte de fallidos.
@@ -665,43 +728,135 @@ def _nombre_persona(fila):
     return nombre or str(fila.get("DOC", ""))
 
 
+def _carpetas_certificados_existentes(carpeta_lote):
+    """Entidades que ya tienen al menos un certificado descargado en esta
+    revisión -- para ofrecer su descarga por separado en vez de solo el
+    .zip completo."""
+    codigos = []
+    for codigo, _etiqueta in ENTIDADES:
+        normal = carpeta_lote / f"Cert_{codigo}"
+        alerta = carpeta_lote / f"Cert_{codigo}_INHABILITADOS"
+        if any(c.is_dir() and any(c.glob("*.pdf")) for c in (normal, alerta)):
+            codigos.append(codigo)
+    return codigos
+
+
+def _quitar_acentos_panorama(texto):
+    return texto.translate(str.maketrans("ÁÉÍÓÚáéíóúÑñ", "AEIOUaeiouNn"))
+
+
+def _columna_que_contiene_panorama(columnas, *fragmentos):
+    for columna in columnas:
+        normalizada = _quitar_acentos_panorama(str(columna)).upper()
+        if all(fragmento in normalizada for fragmento in fragmentos):
+            return columna
+    return None
+
+
+def _leer_postulantes_excel_panorama(ruta_excel):
+    """
+    Lee solo nombre y documento del Excel de postulantes (la plantilla
+    simple: Código, Nombre Completo, Tipo y Número de identificación,
+    Fecha de expedición) -- lo mínimo que necesita Panorama para mostrar a
+    cada persona, sin duplicar toda la lógica de los automation_*.py.
+    """
+    try:
+        encabezados = pd.read_excel(ruta_excel, sheet_name=0, header=0, nrows=0)
+    except Exception:
+        return pd.DataFrame()
+    encabezados.columns = encabezados.columns.str.strip()
+    columnas = list(encabezados.columns)
+
+    col_nombre = _columna_que_contiene_panorama(columnas, "NOMBRE")
+    col_tipo_doc = _columna_que_contiene_panorama(columnas, "TIPO")
+    columnas_sin_tipo = [c for c in columnas if c != col_tipo_doc]
+    col_doc = (
+        _columna_que_contiene_panorama(columnas_sin_tipo, "NUMERO", "IDENTIFICACION")
+        or _columna_que_contiene_panorama(columnas_sin_tipo, "IDENTIFICACION")
+        or _columna_que_contiene_panorama(columnas_sin_tipo, "DOCUMENTO")
+    )
+    if not (col_nombre and col_doc):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_excel(ruta_excel, sheet_name=0, header=0, dtype={col_doc: str})
+    except Exception:
+        return pd.DataFrame()
+    df.columns = df.columns.str.strip()
+    df = df.dropna(subset=[col_doc])
+
+    filas = []
+    for _, fila in df.iterrows():
+        nombre_completo = str(fila[col_nombre]).strip() if pd.notna(fila[col_nombre]) else ""
+        tokens = nombre_completo.split()
+        filas.append({
+            "DOC": str(fila[col_doc]).strip(),
+            "PRIMER_NOMBRE": tokens[0] if tokens else "",
+            "SEGUNDO_NOMBRE": "",
+            "PRIMER_APELLIDO": " ".join(tokens[1:]),
+            "SEGUNDO_APELLIDO": "",
+        })
+    return pd.DataFrame(filas)
+
+
 def _info_lote_panorama(carpeta_lote, propietario):
+    """
+    No depende de haber pasado por "Preparar personas": lee a quien esté
+    disponible -- el CSV ya preparado, o si no el PDF de autorización, o si
+    no el Excel de postulantes -- para que una revisión hecha con
+    "Subir un Excel directo" también muestre su información real en vez de
+    aparecer como "sin preparar".
+    """
     ruta_csv = carpeta_lote / "personas_preparadas.csv"
+    ruta_pdf = carpeta_lote / "AUT_CONS_ANTEC.pdf"
+    ruta_excel = next((f for f in (carpeta_lote / "POSTULANTES.xlsx", carpeta_lote / "POSTULANTES.xls") if f.is_file()), None)
+
     item = {
         "nombre": carpeta_lote.name,
         "propietario": propietario,
-        "preparado": ruta_csv.is_file(),
+        "carpetas_certificados": _carpetas_certificados_existentes(carpeta_lote),
     }
 
-    if ruta_csv.is_file():
-        try:
+    try:
+        if ruta_csv.is_file():
             df_grupo = pd.read_csv(ruta_csv, dtype={"DOC": str}).fillna("")
-            pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
+        elif ruta_pdf.is_file():
+            df_grupo = pp.leer_autorizaciones(str(ruta_pdf)).fillna("")
+        elif ruta_excel is not None:
+            df_grupo = _leer_postulantes_excel_panorama(ruta_excel).fillna("")
+        else:
+            df_grupo = None
+    except Exception as error:
+        item["error"] = f"No se pudo leer la información de postulantes: {error}"
+        return item
 
-            entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in ENTIDADES}
-            personas = []
-            for _, fila in df_grupo.iterrows():
-                doc = str(fila["DOC"])
-                estados_persona = {}
-                for codigo, _etiqueta in ENTIDADES:
-                    estado = _estado_persona(carpeta_lote, codigo, doc)
-                    estados_persona[codigo] = estado
-                    entidades[codigo]["total"] += 1
-                    if estado == "ok":
-                        entidades[codigo]["ok"] += 1
-                    elif estado == "alerta":
-                        entidades[codigo]["alertas"] += 1
-                personas.append({"doc": doc, "nombre": _nombre_persona(fila), "estados": estados_persona})
+    if df_grupo is None or df_grupo.empty:
+        item["sin_datos"] = True
+        return item
 
-            item.update({
-                "total_personas": len(df_grupo),
-                "pendientes_revision": pendientes_revision,
-                "entidades": entidades,
-                "personas": personas,
-            })
-        except Exception as error:
-            item["error"] = f"No se pudo leer personas_preparadas.csv: {error}"
+    pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
 
+    entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in ENTIDADES}
+    personas = []
+    for _, fila in df_grupo.iterrows():
+        doc = str(fila["DOC"])
+        estados_persona = {}
+        for codigo, _etiqueta in ENTIDADES:
+            estado = _estado_persona(carpeta_lote, codigo, doc)
+            estados_persona[codigo] = estado
+            entidades[codigo]["total"] += 1
+            if estado == "ok":
+                entidades[codigo]["ok"] += 1
+            elif estado == "alerta":
+                entidades[codigo]["alertas"] += 1
+        personas.append({"doc": doc, "nombre": _nombre_persona(fila), "estados": estados_persona})
+
+    item.update({
+        "total_personas": len(df_grupo),
+        "pendientes_revision": pendientes_revision,
+        "entidades": entidades,
+        "personas": personas,
+    })
     return item
 
 
@@ -922,11 +1077,25 @@ async def ejecutar_verificacion(websocket: WebSocket):
     carpeta_lote = None
     codigo = None
     nombre_verificacion = None
-    lineas_log: list[str] = []
+    archivo_log = None
     marca_inicio = None
     marca_fin = None
     estado = "desconectado"
     codigo_salida = None
+
+    async def _registrar(texto):
+        # Se escribe (con flush) de una vez en el .txt, en vez de guardar
+        # todo junto al final -- así, si el panel se cae de golpe a media
+        # corrida (por ejemplo, alguien lo reinicia sin darle "Detener"
+        # primero), lo que ya pasó queda guardado y no se pierde entero.
+        if archivo_log is not None:
+            try:
+                archivo_log.write(texto + "\n")
+                archivo_log.flush()
+            except Exception:
+                pass
+        await websocket.send_json({"tipo": "log", "texto": texto})
+
     try:
         datos = await websocket.receive_json()
         codigo = datos.get("codigo")
@@ -953,12 +1122,16 @@ async def ejecutar_verificacion(websocket: WebSocket):
         ruta_script = DIRECTORIO_SCRIPTS / script
         marca_inicio = datetime.now()
 
-        for linea_encabezado in (
-            f"=== Iniciando: {nombre_verificacion} ===",
-            f"Hora de inicio: {marca_inicio.strftime('%Y-%m-%d %H:%M:%S')}",
-        ):
-            lineas_log.append(linea_encabezado)
-            await websocket.send_json({"tipo": "log", "texto": linea_encabezado})
+        codigo_corto = CODIGOS_ARCHIVO_LOG.get(codigo, (codigo or "verificacion").upper())
+        try:
+            archivo_log = open(carpeta_lote / f"Log_{codigo_corto}.txt", "w", encoding="utf-8")
+            archivo_log.write(f"{nombre_verificacion}\n\n")
+            archivo_log.flush()
+        except Exception:
+            archivo_log = None
+
+        await _registrar(f"=== Iniciando: {nombre_verificacion} ===")
+        await _registrar(f"Hora de inicio: {marca_inicio.strftime('%Y-%m-%d %H:%M:%S')}")
 
         proceso = await asyncio.create_subprocess_exec(
             sys.executable, str(ruta_script), str(ruta_datos),
@@ -972,8 +1145,7 @@ async def ejecutar_verificacion(websocket: WebSocket):
         assert proceso.stdout is not None
         async for linea_bytes in proceso.stdout:
             linea = linea_bytes.decode("utf-8", errors="replace").rstrip("\n")
-            lineas_log.append(linea)
-            await websocket.send_json({"tipo": "log", "texto": linea})
+            await _registrar(linea)
 
         codigo_salida = await proceso.wait()
         if codigo_salida == 0:
@@ -984,12 +1156,13 @@ async def ejecutar_verificacion(websocket: WebSocket):
             estado = "error"
 
         marca_fin = datetime.now()
-        for linea_pie in (
-            f"Hora de finalización: {marca_fin.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"Tiempo de ejecución: {_formatear_duracion(marca_fin - marca_inicio)}",
-        ):
-            lineas_log.append(linea_pie)
-            await websocket.send_json({"tipo": "log", "texto": linea_pie})
+        carpeta_normal = carpeta_lote / f"Cert_{codigo_corto}"
+        carpeta_alerta = carpeta_lote / f"Cert_{codigo_corto}_INHABILITADOS"
+        total_pdfs = sum(1 for c in (carpeta_normal, carpeta_alerta) if c.is_dir() for _ in c.glob("*.pdf"))
+
+        await _registrar(f"Hora de finalización: {marca_fin.strftime('%Y-%m-%d %H:%M:%S')}")
+        await _registrar(f"Tiempo de ejecución: {_formatear_duracion(marca_fin - marca_inicio)}")
+        await _registrar(f"PDFs generados en total: {total_pdfs}")
 
         await websocket.send_json({"tipo": "fin", "estado": estado, "codigo": codigo_salida})
 
@@ -1000,21 +1173,17 @@ async def ejecutar_verificacion(websocket: WebSocket):
         if slot is not None:
             cupos.devolver(slot)
 
-        # Se guarda un .txt por verificación junto a los demás resultados de
-        # la revisión, para no depender de alcanzar a leer o copiar el
-        # registro en vivo antes de que la pantalla pase a otra cosa.
-        if carpeta_lote is not None and lineas_log:
+        if archivo_log is not None:
             try:
-                codigo_corto = CODIGOS_ARCHIVO_LOG.get(codigo, (codigo or "verificacion").upper())
-                encabezado = f"{nombre_verificacion or codigo_corto}\n"
                 pie = f"\nEstado: {estado}"
                 if codigo_salida is not None:
                     pie += f" (código de salida {codigo_salida})"
-                # Las horas de inicio/fin y la duración ya quedan dentro de
-                # lineas_log (las mismas líneas que se ven en vivo), así que
-                # el encabezado y el pie del .txt no las repiten.
-                contenido = encabezado + "\n" + "\n".join(lineas_log) + "\n" + pie + "\n"
-                (carpeta_lote / f"Log_{codigo_corto}.txt").write_text(contenido, encoding="utf-8")
+                archivo_log.write(pie + "\n")
+                archivo_log.flush()
+            except Exception:
+                pass
+            try:
+                archivo_log.close()
             except Exception:
                 pass
 
