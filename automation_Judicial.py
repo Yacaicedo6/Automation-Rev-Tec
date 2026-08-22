@@ -255,6 +255,35 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _pitido(frecuencia, duracion_ms):
+    """
+    Pitido audible para quien esté frente al equipo cuando hay una alerta.
+    winsound solo existe en Windows -- el panel corre este script dentro de
+    WSL (Linux), así que ahí simplemente se ignora en silencio en vez de
+    tumbar el guardado de la alerta real con un ModuleNotFoundError.
+    """
+    try:
+        import winsound
+        winsound.Beep(frecuencia, duracion_ms)
+    except Exception:
+        pass
+
+
+def _pedir_respuesta_manual(mensaje):
+    """
+    Pide una respuesta escrita a mano -- pero solo si hay una consola real
+    detrás (por ejemplo, corriendo el script directo con doble clic). Si no
+    hay una terminal interactiva (como cuando el panel web lanza este
+    script como subproceso), no hay quien la escriba: en vez de colgarse
+    esperando una entrada que nunca llega, se devuelve None de una vez para
+    que la persona quede marcada como fallida y se pueda reintentar luego.
+    """
+    if not sys.stdin.isatty():
+        print("No hay una consola interactiva disponible (probablemente corriendo desde el panel web); no se puede pedir la respuesta a mano. Se salta esta persona.")
+        return None
+    return input(mensaje)
+
+
 def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
     """
     Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
@@ -590,11 +619,10 @@ try:
                     pass
 
                 if errores_visibles:
-                    import winsound
-                    winsound.Beep(1000, 500)
-                    accion = input("Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
+                    _pitido(1000, 500)
+                    accion = _pedir_respuesta_manual("Intento fallido. Revisa Chrome, corrige el error y presiona Enter para reintentar (o escribe 'saltar'): ")
 
-                    if accion.lower() == 'saltar':
+                    if accion is None or accion.lower() == 'saltar':
                         break
                     intentos_validacion += 1
                 else:
@@ -602,6 +630,7 @@ try:
 
             if not exito_generacion:
                 print("No se pudo superar la validación. Se salta a la siguiente persona...")
+                documentos_fallidos[num_doc] = "No se pudo superar la validación del portal"
                 fallos_consecutivos = 0  # hubo intervención humana; el portal está respondiendo
                 continue
 
@@ -645,8 +674,7 @@ try:
                     ruta_final_guardado = ruta_esperada_inhab
                     print("Atención: se detectó un posible asunto pendiente. Se guarda en la carpeta de alertas...")
                     lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                    import winsound
-                    winsound.Beep(2000, 1000)
+                    _pitido(2000, 1000)
 
                 # Generar el PDF
                 pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {
