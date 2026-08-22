@@ -21,40 +21,48 @@
     <section class="lg:min-h-0 flex flex-col gap-3 p-4 border-r border-[var(--border)] lg:overflow-y-auto">
 
       <div class="shrink-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-3">
-        <div class="flex gap-4 text-xs border-b border-[var(--border)]">
-          <button type="button" data-fuente="revision" class="pestana-fuente activa pb-2">Usar una revisión mía</button>
-          <button type="button" data-fuente="subida" class="pestana-fuente pb-2">Subir un PDF directo</button>
-          <button type="button" data-fuente="excel" class="pestana-fuente pb-2">Subir un Excel directo</button>
-        </div>
+        <div id="bloque-seleccion" class="flex flex-col gap-3">
+          <div class="flex gap-4 text-xs border-b border-[var(--border)]">
+            <button type="button" data-fuente="revision" class="pestana-fuente activa pb-2">Usar una revisión mía</button>
+            <button type="button" data-fuente="subida" class="pestana-fuente pb-2">Subir un PDF directo</button>
+            <button type="button" data-fuente="excel" class="pestana-fuente pb-2">Subir un Excel directo</button>
+          </div>
 
-        <div id="bloque-fuente-revision" class="flex flex-col gap-2">
-          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión</label>
-          <select id="select-revision" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
-            <option value="">Cargando...</option>
-          </select>
-        </div>
+          <div id="bloque-fuente-revision" class="flex flex-col gap-2">
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión</label>
+            <select id="select-revision" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+              <option value="">Cargando...</option>
+            </select>
+            <div id="bloque-reemplazar-excel" class="hidden flex flex-col gap-1.5 mt-0.5">
+              <button type="button" id="btn-reemplazar-excel" class="self-start text-xs text-[var(--accent)] hover:underline">
+                Reemplazar Excel de esta revisión
+              </button>
+              <input id="archivo-reemplazar-excel" type="file" accept=".xlsx,.xls" class="hidden" />
+            </div>
+          </div>
 
-        <div id="bloque-fuente-subida" class="hidden flex-col gap-2">
-          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-          <input id="nombre-revision-subida" type="text" placeholder="Ej: Festival Mundial de Salsa"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
-          <input id="archivo-subida" type="file" accept="application/pdf"
-                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
-        </div>
+          <div id="bloque-fuente-subida" class="hidden flex-col gap-2">
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+            <input id="nombre-revision-subida" type="text" placeholder="Ej: Festival Mundial de Salsa"
+                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
+            <input id="archivo-subida" type="file" accept="application/pdf"
+                   class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+          </div>
 
-        <div id="bloque-fuente-excel" class="hidden flex-col gap-2">
-          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-          <input id="nombre-revision-excel" type="text" placeholder="Ej: Festival Mundial de Salsa"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-          <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
-          <input id="archivo-excel" type="file" accept=".xlsx,.xls"
-                 class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
-        </div>
+          <div id="bloque-fuente-excel" class="hidden flex-col gap-2">
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+            <input id="nombre-revision-excel" type="text" placeholder="Ej: Festival Mundial de Salsa"
+                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
+            <input id="archivo-excel" type="file" accept=".xlsx,.xls"
+                   class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+          </div>
 
-        <div>
-          <span class="text-xs font-medium block mb-1.5 text-[var(--text-muted)] uppercase tracking-wide">Verificaciones a correr</span>
-          <div id="lista-verificaciones" class="flex flex-col gap-1 text-sm"></div>
+          <div>
+            <span class="text-xs font-medium block mb-1.5 text-[var(--text-muted)] uppercase tracking-wide">Verificaciones a correr</span>
+            <div id="lista-verificaciones" class="grid grid-cols-2 gap-x-3 gap-y-1 text-sm"></div>
+          </div>
         </div>
 
         <div class="flex gap-2">
@@ -76,6 +84,7 @@
             Descargar todo (.zip)
           </a>
         </div>
+        <div id="lista-carpetas" class="hidden flex flex-wrap gap-1.5"></div>
         <div id="lista-resultados" class="flex flex-col gap-1 text-xs max-h-40 overflow-y-auto"></div>
       </div>
 
@@ -97,7 +106,7 @@
         <div id="visor-vacio" class="text-center text-white/40 text-sm px-6">
           Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.
         </div>
-        <iframe id="visor-vnc" class="hidden w-full h-full block"></iframe>
+        <iframe id="visor-vnc" class="hidden w-full h-full block" allow="fullscreen" allowfullscreen></iframe>
       </div>
     </section>
 
@@ -110,10 +119,14 @@ const listaVerificaciones = document.getElementById('lista-verificaciones');
 const btnIniciar = document.getElementById('btn-iniciar');
 const btnDetener = document.getElementById('btn-detener');
 const selectRevision = document.getElementById('select-revision');
+const bloqueReemplazarExcel = document.getElementById('bloque-reemplazar-excel');
+const btnReemplazarExcel = document.getElementById('btn-reemplazar-excel');
+const archivoReemplazarExcelInput = document.getElementById('archivo-reemplazar-excel');
 const nombreRevisionSubidaInput = document.getElementById('nombre-revision-subida');
 const archivoSubidaInput = document.getElementById('archivo-subida');
 const nombreRevisionExcelInput = document.getElementById('nombre-revision-excel');
 const archivoExcelInput = document.getElementById('archivo-excel');
+const bloqueSeleccion = document.getElementById('bloque-seleccion');
 const bloqueFuenteRevision = document.getElementById('bloque-fuente-revision');
 const bloqueFuenteSubida = document.getElementById('bloque-fuente-subida');
 const bloqueFuenteExcel = document.getElementById('bloque-fuente-excel');
@@ -122,6 +135,7 @@ const estadoConexion = document.getElementById('estado-conexion');
 const visorVacio = document.getElementById('visor-vacio');
 const visorVnc = document.getElementById('visor-vnc');
 const bloqueResultados = document.getElementById('bloque-resultados');
+const listaCarpetas = document.getElementById('lista-carpetas');
 const listaResultados = document.getElementById('lista-resultados');
 const linkDescargarZip = document.getElementById('link-descargar-zip');
 
@@ -155,14 +169,20 @@ function ocultarVisor(mensaje) {
   visorVacio.classList.remove('hidden');
 }
 
+const ETIQUETAS_CORTAS_VERIFICACION = {
+  rnmc: 'RNMC', contraloria: 'Contraloría', procuraduria: 'Procuraduría',
+  judicial: 'Judicial', dsex: 'Delitos sexuales',
+};
+
 async function cargarVerificaciones() {
   const resp = await fetch('/api/verificaciones');
   verificaciones = await resp.json();
   listaVerificaciones.innerHTML = '';
   for (const [codigo, nombre] of Object.entries(verificaciones)) {
     const label = document.createElement('label');
-    label.className = 'flex items-center gap-2';
-    label.innerHTML = `<input type="checkbox" value="${codigo}" checked class="rounded border-[var(--border)]"> ${nombre}`;
+    label.className = 'flex items-center gap-2 whitespace-nowrap';
+    label.title = nombre;
+    label.innerHTML = `<input type="checkbox" value="${codigo}" checked class="rounded border-[var(--border)] shrink-0"> ${ETIQUETAS_CORTAS_VERIFICACION[codigo] || nombre}`;
     listaVerificaciones.appendChild(label);
   }
 }
@@ -186,7 +206,45 @@ async function cargarMisRevisiones() {
     opcion.disabled = !revision.archivo_para_verificar;
     selectRevision.appendChild(opcion);
   }
+  actualizarBloqueReemplazarExcel();
 }
+
+function actualizarBloqueReemplazarExcel() {
+  const revision = misRevisiones.find(r => r.nombre_lote === selectRevision.value);
+  bloqueReemplazarExcel.classList.toggle('hidden', !(revision && revision.tiene_excel));
+}
+
+selectRevision.addEventListener('change', actualizarBloqueReemplazarExcel);
+
+btnReemplazarExcel.addEventListener('click', () => archivoReemplazarExcelInput.click());
+
+archivoReemplazarExcelInput.addEventListener('change', async () => {
+  const archivo = archivoReemplazarExcelInput.files[0];
+  if (!archivo) return;
+  const nombreRevision = selectRevision.value;
+
+  const formulario = new FormData();
+  formulario.append('nombre_lote', nombreRevision);
+  formulario.append('excel', archivo);
+
+  btnReemplazarExcel.disabled = true;
+  btnReemplazarExcel.textContent = 'Subiendo...';
+  const resp = await fetch('/api/subir-excel-directo', { method: 'POST', body: formulario });
+  const datos = await resp.json();
+  btnReemplazarExcel.disabled = false;
+  btnReemplazarExcel.textContent = 'Reemplazar Excel de esta revisión';
+  archivoReemplazarExcelInput.value = '';
+
+  if (datos.error) {
+    agregarLinea(`ERROR: ${datos.error}`);
+    return;
+  }
+
+  agregarLinea(`Excel de "${nombreRevision}" reemplazado correctamente.`);
+  await cargarMisRevisiones();
+  selectRevision.value = nombreRevision;
+  actualizarBloqueReemplazarExcel();
+});
 
 function agregarLinea(texto) {
   const linea = document.createElement('div');
@@ -203,6 +261,19 @@ async function cargarResultados(nombreRevision) {
   const resp = await fetch(`/api/lote/${encodeURIComponent(nombreRevision)}/archivos`);
   const datos = await resp.json();
   if (datos.error) return;
+
+  const carpetas = new Set();
+  for (const archivo of datos.archivos) {
+    const primerSegmento = archivo.ruta_relativa.split('/')[0];
+    if (primerSegmento.startsWith('Cert_')) {
+      carpetas.add(primerSegmento.replace(/_INHABILITADOS$/, ''));
+    }
+  }
+  listaCarpetas.innerHTML = Array.from(carpetas).map(carpeta => `
+    <a href="/api/lote/${encodeURIComponent(nombreRevision)}/descargar-carpeta?carpeta=${encodeURIComponent(carpeta)}"
+       class="text-xs border border-[var(--border)] rounded-lg py-1 px-2 hover:bg-[var(--hover-bg)] mono">${carpeta}.zip</a>
+  `).join('');
+  listaCarpetas.classList.toggle('hidden', carpetas.size === 0);
 
   listaResultados.innerHTML = '';
   for (const archivo of datos.archivos) {
@@ -304,6 +375,7 @@ btnIniciar.addEventListener('click', async () => {
   cancelado = false;
   btnIniciar.disabled = true;
   btnDetener.disabled = false;
+  bloqueSeleccion.classList.add('hidden');
   marcarEstado('Corriendo...', 'var(--accent)');
   logEntries.innerHTML = '';
   bloqueResultados.classList.add('hidden');
@@ -317,6 +389,7 @@ btnIniciar.addEventListener('click', async () => {
   ocultarVisor(`Dale "Iniciar" para ver el navegador aquí. Cupos disponibles para "Ejecutar verificaciones": {{ max_sesiones }} a la vez.`);
   btnIniciar.disabled = false;
   btnDetener.disabled = true;
+  bloqueSeleccion.classList.remove('hidden');
   cargarResultados(nombreRevision);
 });
 

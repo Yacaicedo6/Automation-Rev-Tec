@@ -92,20 +92,20 @@ async function cargarPanorama() {
 
   if (grupos.length === 0) {
     mensaje.textContent = datos.es_admin
-      ? 'Todavía nadie del equipo ha preparado una revisión.'
-      : 'Todavía no has preparado ninguna revisión. Ve a "Preparar personas" para empezar.';
+      ? 'Todavía nadie del equipo tiene una revisión creada.'
+      : 'Todavía no tienes ninguna revisión creada.';
     return;
   }
   mensaje.textContent = '';
 
   const totalPersonas = grupos.reduce((s, g) => s + (g.total_personas || 0), 0);
-  const sinPreparar = grupos.filter(g => !g.preparado).length;
+  const vacias = grupos.filter(g => g.sin_datos).length;
   const conAlerta = grupos.filter(g => g.entidades && Object.values(g.entidades).some(e => e.alertas > 0)).length;
 
   tarjetasStats.innerHTML =
     tarjetaStat('Revisiones', grupos.length, 'var(--text-main)') +
     tarjetaStat('Personas en total', totalPersonas, 'var(--text-muted)') +
-    tarjetaStat('Sin preparar todavía', sinPreparar, 'var(--badge-pendiente-text)') +
+    tarjetaStat('Vacías', vacias, 'var(--badge-pendiente-text)') +
     tarjetaStat('Con alguna alerta', conAlerta, 'var(--badge-alerta-text)');
   tarjetasStats.classList.remove('hidden');
 
@@ -116,13 +116,25 @@ async function cargarPanorama() {
     const esPropio = grupo.propietario === USUARIO_ACTUAL;
     let contenido = `<div class="flex items-center justify-between">
       <div class="font-medium text-sm">${grupo.nombre}${datos.es_admin ? ` <span class="text-xs font-normal text-[var(--text-muted)]">(${grupo.propietario})</span>` : ''}</div>
-      ${esPropio ? `<a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-zip" class="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">Descargar (.zip)</a>` : ''}
+      <div class="flex items-center gap-3 shrink-0">
+        ${esPropio ? `<a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-zip" class="text-xs text-[var(--text-muted)] hover:text-[var(--text-main)] hover:underline">Descargar (.zip)</a>` : ''}
+        ${datos.es_admin ? `<button class="btn-eliminar-revision text-xs text-[var(--badge-alerta-text)] hover:underline">Eliminar</button>` : ''}
+      </div>
     </div>`;
 
-    if (!grupo.preparado) {
-      contenido += `<div class="text-xs text-[var(--text-muted)]">Sin preparar todavía (falta correr "Preparar personas").</div>`;
-    } else if (grupo.error) {
+    if (grupo.carpetas_certificados && grupo.carpetas_certificados.length > 0 && esPropio) {
+      contenido += `<div class="flex flex-wrap gap-1.5">
+        ${grupo.carpetas_certificados.map(codigo => {
+          const etiqueta = (grupo.entidades && grupo.entidades[codigo]) ? grupo.entidades[codigo].etiqueta : codigo;
+          return `<a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-carpeta?carpeta=Cert_${encodeURIComponent(codigo)}" class="text-xs border border-[var(--border)] rounded-lg py-1 px-2 hover:bg-[var(--hover-bg)] mono">${etiqueta}.zip</a>`;
+        }).join('')}
+      </div>`;
+    }
+
+    if (grupo.error) {
       contenido += `<div class="text-xs text-[var(--badge-alerta-text)]">${grupo.error}</div>`;
+    } else if (grupo.sin_datos) {
+      contenido += `<div class="text-xs text-[var(--text-muted)]">Sin información de postulantes todavía.</div>`;
     } else {
       let fila = `<div class="flex flex-wrap items-center gap-4 text-xs">
         <span class="text-[var(--text-muted)]">${grupo.total_personas} persona(s)</span>`;
@@ -156,6 +168,24 @@ async function cargarPanorama() {
         const visible = !detalle.classList.contains('hidden');
         detalle.classList.toggle('hidden', visible);
         btnVerPersonas.textContent = visible ? 'Ver personas y detalle por verificación' : 'Ocultar detalle';
+      });
+    }
+
+    const btnEliminar = tarjeta.querySelector('.btn-eliminar-revision');
+    if (btnEliminar) {
+      btnEliminar.addEventListener('click', async () => {
+        if (!confirm(`¿Eliminar por completo la revisión "${grupo.nombre}" de ${grupo.propietario}? Esto borra todos sus certificados y no se puede deshacer.`)) return;
+        const resp = await fetch('/api/admin/eliminar-revision', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario: grupo.propietario, nombre_lote: grupo.nombre }),
+        });
+        const resultado = await resp.json();
+        if (resultado.error) {
+          alert(resultado.error);
+          return;
+        }
+        tarjeta.remove();
       });
     }
   }
