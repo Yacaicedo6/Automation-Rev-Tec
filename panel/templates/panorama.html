@@ -41,20 +41,25 @@ function resumenEntidad(entidad) {
   return insignia(`En curso ${entidad.ok}/${entidad.total}`, 'pendiente');
 }
 
-function celdaEstado(estado) {
-  if (estado === 'ok') return insignia('OK', 'ok');
-  if (estado === 'alerta') return insignia('Alerta', 'alerta');
-  return '<span class="text-[var(--text-muted)]">—</span>';
+function celdaEstado(infoEstado, permiteEliminar) {
+  if (!infoEstado || infoEstado.estado === 'pendiente' || !infoEstado.archivo) {
+    return '<span class="text-[var(--text-muted)]">—</span>';
+  }
+  const insigniaHtml = infoEstado.estado === 'alerta' ? insignia('Alerta', 'alerta') : insignia('OK', 'ok');
+  const botonEliminar = permiteEliminar
+    ? `<button type="button" class="btn-eliminar-archivo text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)]" data-archivo="${infoEstado.archivo}" title="Borrar este certificado (queda pendiente para volver a consultarse)">✕</button>`
+    : '';
+  return `<span class="inline-flex items-center gap-1">${insigniaHtml}${botonEliminar}</span>`;
 }
 
-function tablaPersonas(grupo) {
+function tablaPersonas(grupo, permiteEliminar) {
   const codigos = Object.keys(grupo.entidades);
   let filasEncabezado = codigos.map(c => `<th class="px-2 py-1.5 text-left font-medium">${grupo.entidades[c].etiqueta}</th>`).join('');
   let filas = grupo.personas.map(persona => `
     <tr class="border-t border-[var(--border)]">
       <td class="px-2 py-1.5">${persona.nombre}</td>
       <td class="px-2 py-1.5 text-[var(--text-muted)] mono">${persona.doc}</td>
-      ${codigos.map(c => `<td class="px-2 py-1.5">${celdaEstado(persona.estados[c])}</td>`).join('')}
+      ${codigos.map(c => `<td class="px-2 py-1.5">${celdaEstado(persona.estados[c], permiteEliminar)}</td>`).join('')}
     </tr>`).join('');
   return `
     <div class="overflow-x-auto">
@@ -126,7 +131,10 @@ async function cargarPanorama() {
       contenido += `<div class="flex flex-wrap gap-1.5">
         ${grupo.carpetas_certificados.map(codigo => {
           const etiqueta = (grupo.entidades && grupo.entidades[codigo]) ? grupo.entidades[codigo].etiqueta : codigo;
-          return `<a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-carpeta?carpeta=Cert_${encodeURIComponent(codigo)}" class="text-xs border border-[var(--border)] rounded-lg py-1 px-2 hover:bg-[var(--hover-bg)] mono">${etiqueta}.zip</a>`;
+          return `<span class="inline-flex items-stretch rounded-lg border border-[var(--border)] overflow-hidden">
+            <a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-carpeta?carpeta=Cert_${encodeURIComponent(codigo)}" class="text-xs py-1 px-2 hover:bg-[var(--hover-bg)] mono">${etiqueta}.zip</a>
+            <button type="button" class="btn-eliminar-carpeta text-xs px-1.5 border-l border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)] hover:bg-[var(--hover-bg)]" data-carpeta="Cert_${codigo}" data-etiqueta="${etiqueta}" title="Borrar los certificados de ${etiqueta} en esta revisión">✕</button>
+          </span>`;
         }).join('')}
       </div>`;
     }
@@ -162,7 +170,24 @@ async function cargarPanorama() {
       let cargado = false;
       btnVerPersonas.addEventListener('click', () => {
         if (!cargado) {
-          detalle.innerHTML = tablaPersonas(grupo);
+          detalle.innerHTML = tablaPersonas(grupo, esPropio);
+          detalle.querySelectorAll('.btn-eliminar-archivo').forEach(btn => {
+            btn.addEventListener('click', async () => {
+              const archivo = btn.dataset.archivo;
+              if (!confirm(`¿Borrar este certificado (${archivo})? Esa persona queda pendiente para volver a consultarse en esa verificación. No se puede deshacer.`)) return;
+              const resp = await fetch(`/api/lote/${encodeURIComponent(grupo.nombre)}/eliminar-archivo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ archivo }),
+              });
+              const resultado = await resp.json();
+              if (resultado.error) {
+                alert(resultado.error);
+                return;
+              }
+              cargarPanorama();
+            });
+          });
           cargado = true;
         }
         const visible = !detalle.classList.contains('hidden');
@@ -188,6 +213,25 @@ async function cargarPanorama() {
         tarjeta.remove();
       });
     }
+
+    tarjeta.querySelectorAll('.btn-eliminar-carpeta').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const carpeta = btn.dataset.carpeta;
+        const etiqueta = btn.dataset.etiqueta;
+        if (!confirm(`¿Borrar los certificados de ${etiqueta} en "${grupo.nombre}"? Podrás volver a correr esa verificación desde cero. No se puede deshacer.`)) return;
+        const resp = await fetch(`/api/lote/${encodeURIComponent(grupo.nombre)}/eliminar-carpeta`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ carpeta }),
+        });
+        const resultado = await resp.json();
+        if (resultado.error) {
+          alert(resultado.error);
+          return;
+        }
+        cargarPanorama();
+      });
+    });
   }
 }
 

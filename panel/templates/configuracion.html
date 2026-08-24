@@ -39,6 +39,18 @@
       </button>
     </div>
 
+    <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-3">
+      <div>
+        <div class="text-sm font-medium">Avisos por correo</div>
+        <div class="text-xs text-[var(--text-muted)] mt-0.5">Te llega un correo a tu propio correo registrado cada vez que termina una verificación tuya (una por cada RNMC, Contraloría, etc.).</div>
+      </div>
+      <label class="flex items-center gap-2 text-sm cursor-pointer">
+        <input type="checkbox" id="chk-aviso-correo" {% if mis_datos.avisar_por_correo %}checked{% endif %}
+               class="rounded border-[var(--border)]" />
+        Avisarme por correo cuando termine cada verificación
+      </label>
+    </div>
+
     <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4">
       <div>
         <div class="text-sm font-medium">Cambiar mi contraseña</div>
@@ -130,6 +142,16 @@ function mostrarAvisoCuenta(texto, tipo) {
     tipo === 'error' ? 'bg-[var(--badge-alerta-bg)] text-[var(--badge-alerta-text)]' : 'bg-[var(--badge-ok-bg)] text-[var(--badge-ok-text)]'
   }`;
 }
+
+document.getElementById('chk-aviso-correo').addEventListener('change', async (evento) => {
+  const resp = await fetch('/api/mi-aviso-correo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ avisar_por_correo: evento.target.checked }),
+  });
+  const datos = await resp.json();
+  mostrarAvisoCuenta(datos.error || 'Preferencia guardada.', datos.error ? 'error' : 'ok');
+});
 
 document.getElementById('btn-guardar-perfil').addEventListener('click', async () => {
   const resp = await fetch('/api/mi-perfil', {

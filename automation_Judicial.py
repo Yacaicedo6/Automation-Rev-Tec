@@ -279,7 +279,6 @@ def _pedir_respuesta_manual(mensaje):
     que la persona quede marcada como fallida y se pueda reintentar luego.
     """
     if not sys.stdin.isatty():
-        print("No hay una consola interactiva disponible (probablemente corriendo desde el panel web); no se puede pedir la respuesta a mano. Se salta esta persona.")
         return None
     return input(mensaje)
 
@@ -470,9 +469,10 @@ wait = WebDriverWait(driver, 15)
 
 errores_no_manejados = 0
 fallos_consecutivos = 0
+total_personas = len(df)
 
 try:
-    for index, row in df.iterrows():
+    for contador_persona, (index, row) in enumerate(df.iterrows(), start=1):
         num_doc = str(row['# DOC. IDENTIDAD']).strip()
 
         if not num_doc[0].isdigit():
@@ -488,7 +488,7 @@ try:
         s_apellido = str(row['SEGUNDO APELLIDO']) if pd.notna(row['SEGUNDO APELLIDO']) else ""
         nombre_completo = f"{p_nombre} {s_nombre} {p_apellido} {s_apellido}".replace("  ", " ").strip()
 
-        print(f"\n--- Procesando Documento: {num_doc} ({nombre_completo}) ---")
+        print(f"\n[{contador_persona}/{total_personas}] {nombre_completo} ({num_doc})")
 
         # ==========================================
         # 4. VALIDACIÓN PREVIA (LOOK BEFORE YOU LEAP)
@@ -629,7 +629,6 @@ try:
                     exito_generacion = True
 
             if not exito_generacion:
-                print("No se pudo superar la validación. Se salta a la siguiente persona...")
                 documentos_fallidos[num_doc] = "No se pudo superar la validación del portal"
                 fallos_consecutivos = 0  # hubo intervención humana; el portal está respondiendo
                 continue
@@ -642,39 +641,44 @@ try:
             try:
                 # El resultado se carga por AJAX y el portal tarda un tiempo
                 # variable en renderizarlo: una pausa fija a veces no alcanzaba
-                # y se capturaba la página todavía en blanco (falso positivo
-                # de "asunto pendiente"). En su lugar se espera hasta que el
-                # texto deje de cambiar entre una lectura y la siguiente (o
-                # hasta 20s como máximo).
+                # y se capturaba la página todavía en blanco. La primera
+                # versión de esta espera daba la página por "estable" con que
+                # UNA sola pareja de lecturas seguidas se viera igual -- eso
+                # bastaba para que una página vacía que nunca cargó nada se
+                # confundiera con un resultado real ya asentado. Ahora hacen
+                # falta 3 lecturas seguidas idénticas (no 1) para darla por
+                # estable, y con más margen total (hasta 25s).
                 texto_pantalla = ""
                 texto_anterior = None
-                for _ in range(20):
+                lecturas_iguales_seguidas = 0
+                for _ in range(25):
                     texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
                     if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
                         break
                     if texto_pantalla == texto_anterior:
-                        break
+                        lecturas_iguales_seguidas += 1
+                        if lecturas_iguales_seguidas >= 3:
+                            break
+                    else:
+                        lecturas_iguales_seguidas = 0
                     texto_anterior = texto_pantalla
                     time.sleep(1)
 
                 if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
                     ruta_final_guardado = ruta_esperada_normal
                     print("Resultados limpios. Se guarda en la carpeta estándar...")
-                elif texto_pantalla.strip() == texto_antes_consulta.strip():
-                    # La pantalla nunca cambió después de consultar: lo más
-                    # probable es que el portal esté caído o muy lento y no
-                    # llegó a responder, no que haya un antecedente real. Se
-                    # guarda aparte para reintentar en la próxima corrida en
-                    # vez de sonar la alarma de una alerta real.
-                    ruta_final_guardado = ruta_esperada_inconcluso
-                    print("Atención: el portal no devolvió ningún resultado (posible caída o lentitud del servicio). Se guarda para reintentar más tarde...")
-                    lista_inconclusos.append(nombre_archivo_esperado.replace(".pdf", ""))
-                    documentos_fallidos[num_doc] = "Tiempo de espera agotado (posible caída o lentitud del portal)"
                 else:
-                    ruta_final_guardado = ruta_esperada_inhab
-                    print("Atención: se detectó un posible asunto pendiente. Se guarda en la carpeta de alertas...")
-                    lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                    _pitido(2000, 1000)
+                    # Cualquier otro caso -no solo "la pantalla nunca cambió"-
+                    # se trata como "no se pudo confirmar" en vez de asumir
+                    # una alerta real: ya se vio en la práctica que una página
+                    # que se queda a medio cargar puede diferir un poco de la
+                    # foto de antes de consultar sin que eso signifique un
+                    # antecedente de verdad. Es más seguro pedir reintento que
+                    # sonar una alarma legal sin evidencia real detrás.
+                    ruta_final_guardado = ruta_esperada_inconcluso
+                    print("Atención: no se pudo confirmar el resultado (el portal no devolvió el mensaje esperado). Se guarda para reintentar más tarde, sin marcarlo como alerta...")
+                    lista_inconclusos.append(nombre_archivo_esperado.replace(".pdf", ""))
+                    documentos_fallidos[num_doc] = "No se pudo confirmar el resultado (posible caída o lentitud del portal)"
 
                 # Generar el PDF
                 pdf_data = driver.execute_cdp_cmd("Page.printToPDF", {

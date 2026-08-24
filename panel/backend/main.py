@@ -24,6 +24,7 @@ import re
 import secrets
 import shutil
 import sys
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +96,7 @@ def _archivo_seguro_en_lote(carpeta_lote: Path, ruta_relativa: str) -> Optional[
 sys.path.insert(0, str(DIRECTORIO_SCRIPTS))
 sys.path.insert(0, str(DIRECTORIO_PANEL))
 import preparar_personas as pp  # noqa: E402
+import notificar  # noqa: E402 -- mismo mecanismo de correo que usa ejecutar_revision.py
 from dotenv import load_dotenv  # noqa: E402
 import gestionar_usuarios as gu  # noqa: E402 -- misma lógica que la de consola, un solo lugar
 
@@ -209,6 +211,109 @@ def _formatear_duracion(delta) -> str:
     if minutos:
         return f"{minutos}m {segundos:02d}s"
     return f"{segundos}s"
+
+
+LIMITE_ZIP_CORREO_BYTES = 20 * 1024 * 1024  # deja margen bajo el tope real de Gmail (~25MB)
+
+
+def _resumen_estado_verificacion(estado, total_alertas, total_fallidos):
+    if estado != "completado":
+        return "Terminó con un error técnico"
+    if total_alertas or total_fallidos:
+        return "Terminó con alertas o consultas que revisar"
+    return "Completada sin novedades"
+
+
+def _enviar_notificacion_verificacion(
+    usuario, nombre_verificacion, nombre_lote, carpeta_lote, codigo_corto,
+    estado, codigo_salida, marca_inicio, marca_fin, total_pdfs,
+):
+    """
+    Se corre en un hilo aparte (ver asyncio.to_thread en /ws/ejecutar) para
+    no bloquear el servidor mientras arma el .zip o espera a Gmail. Falla en
+    silencio -- un correo que no sale no debe tumbar ni ensuciar el registro
+    de la verificación en sí.
+    """
+    usuarios = gu._cargar()
+    datos_usuario = usuarios.get(usuario, {})
+    if not datos_usuario.get("avisar_por_correo"):
+        return
+    correo_destino = (datos_usuario.get("correo") or "").strip()
+    if not correo_destino:
+        return
+
+    carpeta_alerta_dir = carpeta_lote / f"Cert_{codigo_corto}_INHABILITADOS"
+    total_alertas = sum(1 for _ in carpeta_alerta_dir.glob("*.pdf")) if carpeta_alerta_dir.is_dir() else 0
+
+    ruta_fallidos = carpeta_lote / f"Fallidos_{codigo_corto}.xlsx"
+    total_fallidos = None
+    if ruta_fallidos.is_file():
+        try:
+            total_fallidos = len(pd.read_excel(ruta_fallidos))
+        except Exception:
+            total_fallidos = None
+
+    resumen = _resumen_estado_verificacion(estado, total_alertas, total_fallidos or 0)
+    nombres = (datos_usuario.get("nombres") or usuario).strip()
+
+    lineas = [
+        f"Hola {nombres},",
+        "",
+        f'Tu verificación de {nombre_verificacion} para la revisión "{nombre_lote}" ya terminó.',
+        "",
+        f"Resultado: {resumen}",
+        f"Hora de inicio: {marca_inicio.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Hora de finalización: {marca_fin.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Tiempo de ejecución: {_formatear_duracion(marca_fin - marca_inicio)}",
+        "",
+        f"PDFs generados en total: {total_pdfs}",
+        f"Con alerta real: {total_alertas}",
+    ]
+    if total_fallidos is not None:
+        lineas.append(f"Con consulta fallida: {total_fallidos}")
+
+    adjuntos = []
+    ruta_log = carpeta_lote / f"Log_{codigo_corto}.txt"
+    if ruta_log.is_file():
+        adjuntos.append(str(ruta_log))
+    if ruta_fallidos.is_file():
+        adjuntos.append(str(ruta_fallidos))
+    ruta_inhabilitados = carpeta_lote / f"Inhabilitados_{codigo_corto}.xlsx"
+    if ruta_inhabilitados.is_file():
+        adjuntos.append(str(ruta_inhabilitados))
+
+    ruta_zip_temporal = None
+    subcarpetas = [c for c in (carpeta_lote / f"Cert_{codigo_corto}", carpeta_alerta_dir) if c.is_dir()]
+    if subcarpetas:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_archivo:
+            for sub in subcarpetas:
+                for ruta in sub.rglob("*"):
+                    if ruta.is_file():
+                        zip_archivo.write(ruta, arcname=str(ruta.relative_to(carpeta_lote)))
+        tamano = buffer.tell()
+        if tamano <= LIMITE_ZIP_CORREO_BYTES:
+            descriptor, ruta_zip_temporal = tempfile.mkstemp(suffix=f"_Cert_{codigo_corto}.zip")
+            with os.fdopen(descriptor, "wb") as archivo_temp:
+                archivo_temp.write(buffer.getvalue())
+            adjuntos.append(ruta_zip_temporal)
+        else:
+            lineas.append("")
+            lineas.append(f"El .zip de certificados pesa más de {LIMITE_ZIP_CORREO_BYTES // (1024 * 1024)}MB y no se pudo adjuntar -- descárgalo desde el panel.")
+
+    lineas.append("")
+    lineas.append("Yan Caicedo.")
+
+    codigo_corto_asunto = nombre_verificacion.split(" - ")[0]
+    asunto = f"Revisión técnico-administrativa: {codigo_corto_asunto}"
+    asunto += " terminó con alertas" if resumen != "Completada sin novedades" else " completada"
+    asunto += f" — {nombre_lote}"
+
+    try:
+        notificar.enviar_notificacion(asunto, "\n".join(lineas), adjuntos=adjuntos, destinatario=correo_destino)
+    finally:
+        if ruta_zip_temporal and os.path.exists(ruta_zip_temporal):
+            os.remove(ruta_zip_temporal)
 
 
 def _pagina_o_login(request: Request):
@@ -462,6 +567,7 @@ def pagina_configuracion(request: Request):
             "apellidos": datos_usuario.get("apellidos", ""),
             "correo": datos_usuario.get("correo", ""),
             "celular": datos_usuario.get("celular", ""),
+            "avisar_por_correo": datos_usuario.get("avisar_por_correo", False),
         },
     })
 
@@ -484,6 +590,18 @@ def actualizar_mi_perfil(request: Request, datos: dict = Body(...)):
 
     usuarios = gu._cargar()
     usuarios[usuario].update({"nombres": nombres, "apellidos": apellidos, "correo": correo, "celular": celular})
+    gu._guardar(usuarios)
+    return {"actualizado": True}
+
+
+@app.post("/api/mi-aviso-correo")
+def actualizar_mi_aviso_correo(request: Request, datos: dict = Body(...)):
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    usuarios = gu._cargar()
+    usuarios[usuario]["avisar_por_correo"] = bool(datos.get("avisar_por_correo"))
     gu._guardar(usuarios)
     return {"actualizado": True}
 
@@ -665,6 +783,68 @@ def descargar_carpeta_lote(request: Request, nombre_lote: str, carpeta: str):
     )
 
 
+@app.post("/api/lote/{nombre_lote}/eliminar-archivo")
+def eliminar_archivo_lote(request: Request, nombre_lote: str, datos: dict = Body(...)):
+    """Borra un solo certificado (por ejemplo uno mal nombrado o con un
+    error puntual) dentro de una revisión propia -- esa persona vuelve a
+    quedar pendiente para esa entidad, sin tocar a nadie más."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    ruta_archivo = _archivo_seguro_en_lote(carpeta_lote, (datos.get("archivo") or "").strip())
+    if ruta_archivo is None:
+        return JSONResponse({"error": "Archivo no encontrado."}, status_code=404)
+
+    ruta_archivo.unlink()
+    return {"eliminado": True}
+
+
+@app.post("/api/lote/{nombre_lote}/eliminar-carpeta")
+def eliminar_carpeta_lote(request: Request, nombre_lote: str, datos: dict = Body(...)):
+    """Borra los certificados de una sola entidad (Cert_XXX y su
+    _INHABILITADOS) dentro de una revisión propia, para poder volver a
+    correr esa verificación desde cero sin que "ya existe" bloquee el
+    reintento -- por ejemplo, si un problema del portal dejó certificados
+    vacíos o mal clasificados."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _lote_existente(usuario, nombre_lote)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "Esa revisión no existe."}, status_code=404)
+
+    nombre_carpeta_seguro = _sanear_nombre((datos.get("carpeta") or "").strip())
+    if not nombre_carpeta_seguro:
+        return JSONResponse({"error": "Carpeta no válida."}, status_code=400)
+
+    raiz = carpeta_lote.resolve()
+    subcarpetas = [
+        c for c in (carpeta_lote / nombre_carpeta_seguro, carpeta_lote / f"{nombre_carpeta_seguro}_INHABILITADOS")
+        if c.is_dir() and c.resolve().parent == raiz
+    ]
+    if not subcarpetas:
+        return JSONResponse({"error": "Esa carpeta no existe en esta revisión."}, status_code=404)
+
+    for sub in subcarpetas:
+        shutil.rmtree(sub)
+
+    # También se borran el .txt de log y el Excel de fallidos de esa
+    # entidad, para que no queden mostrando datos de la corrida que se
+    # acaba de borrar.
+    codigo_entidad = nombre_carpeta_seguro.replace("Cert_", "")
+    for extra in (carpeta_lote / f"Log_{codigo_entidad}.txt", carpeta_lote / f"Fallidos_{codigo_entidad}.xlsx"):
+        if extra.is_file():
+            extra.unlink()
+
+    return {"eliminado": True}
+
+
 @app.post("/api/admin/eliminar-revision")
 def admin_eliminar_revision(request: Request, datos: dict = Body(...)):
     """Borra la carpeta completa de una revisión -- de cualquier usuario, no
@@ -702,19 +882,32 @@ ENTIDADES = [
 ]
 
 
-def _estado_persona(carpeta_lote, codigo, doc):
+def _mapa_certificados_entidad(carpeta_lote, codigo):
+    """
+    Recorre una sola vez las carpetas Cert_<codigo> y Cert_<codigo>_INHABILITADOS
+    y arma {documento: (estado, ruta_relativa)} -- antes se repetía un
+    listado de carpeta (glob) por cada persona de cada entidad, lo que en
+    una revisión de 60+ personas hacía cientos de listados redundantes solo
+    para pintar Panorama. El documento se toma del último tramo del nombre
+    de archivo (después del último "_"), que es como lo arman los
+    automation_*.py -- más rápido y más preciso que "el doc aparece en
+    algún lado del nombre" (esto último podía confundir, por ejemplo, la
+    cédula "123" con una que la contuviera como "1234567").
+    """
+    mapa = {}
     carpeta_normal = carpeta_lote / f"Cert_{codigo}"
     carpeta_alerta = carpeta_lote / f"Cert_{codigo}_INHABILITADOS"
 
-    if carpeta_alerta.is_dir():
-        for archivo in carpeta_alerta.glob("*.pdf"):
-            if doc in archivo.stem:
-                return "alerta"
     if carpeta_normal.is_dir():
         for archivo in carpeta_normal.glob("*.pdf"):
-            if doc in archivo.stem:
-                return "ok"
-    return "pendiente"
+            doc = archivo.stem.rsplit("_", 1)[-1]
+            mapa[doc] = ("ok", str(archivo.relative_to(carpeta_lote)))
+    if carpeta_alerta.is_dir():
+        for archivo in carpeta_alerta.glob("*.pdf"):
+            doc = archivo.stem.rsplit("_", 1)[-1]
+            mapa[doc] = ("alerta", str(archivo.relative_to(carpeta_lote)))
+
+    return mapa
 
 
 def _nombre_persona(fila):
@@ -836,14 +1029,16 @@ def _info_lote_panorama(carpeta_lote, propietario):
 
     pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
 
+    mapas_entidad = {codigo: _mapa_certificados_entidad(carpeta_lote, codigo) for codigo, _etiqueta in ENTIDADES}
+
     entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in ENTIDADES}
     personas = []
     for _, fila in df_grupo.iterrows():
         doc = str(fila["DOC"])
         estados_persona = {}
         for codigo, _etiqueta in ENTIDADES:
-            estado = _estado_persona(carpeta_lote, codigo, doc)
-            estados_persona[codigo] = estado
+            estado, ruta_relativa = mapas_entidad[codigo].get(doc, ("pendiente", None))
+            estados_persona[codigo] = {"estado": estado, "archivo": ruta_relativa}
             entidades[codigo]["total"] += 1
             if estado == "ok":
                 entidades[codigo]["ok"] += 1
@@ -1075,13 +1270,16 @@ async def ejecutar_verificacion(websocket: WebSocket):
 
     slot = None
     carpeta_lote = None
+    nombre_lote = None
     codigo = None
+    codigo_corto = None
     nombre_verificacion = None
     archivo_log = None
     marca_inicio = None
     marca_fin = None
     estado = "desconectado"
     codigo_salida = None
+    total_pdfs = None
 
     async def _registrar(texto):
         # Se escribe (con flush) de una vez en el .txt, en vez de guardar
@@ -1135,6 +1333,7 @@ async def ejecutar_verificacion(websocket: WebSocket):
 
         proceso = await asyncio.create_subprocess_exec(
             sys.executable, str(ruta_script), str(ruta_datos),
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(DIRECTORIO_SCRIPTS),
@@ -1184,6 +1383,19 @@ async def ejecutar_verificacion(websocket: WebSocket):
                 pass
             try:
                 archivo_log.close()
+            except Exception:
+                pass
+
+        # El correo se manda en un hilo aparte para no congelar el servidor
+        # (armar el .zip y hablar con Gmail toma su tiempo) mientras otras
+        # personas siguen usando el panel.
+        if carpeta_lote is not None and codigo_corto is not None and marca_fin is not None and total_pdfs is not None:
+            try:
+                await asyncio.to_thread(
+                    _enviar_notificacion_verificacion,
+                    usuario, nombre_verificacion, nombre_lote, carpeta_lote, codigo_corto,
+                    estado, codigo_salida, marca_inicio, marca_fin, total_pdfs,
+                )
             except Exception:
                 pass
 

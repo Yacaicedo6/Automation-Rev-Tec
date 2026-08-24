@@ -11,24 +11,33 @@ de la cuenta). Se configura con estas variables en el .env de este proyecto:
 Si esas variables no están configuradas, no se puede enviar el correo y la
 función lo indica en vez de fallar silenciosamente.
 """
+import mimetypes
 import os
 import smtplib
 import sys
 from email.message import EmailMessage
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def enviar_notificacion(asunto, cuerpo):
+def enviar_notificacion(asunto, cuerpo, adjuntos=None, destinatario=None):
+    """
+    adjuntos: lista opcional de rutas de archivo para adjuntar (por ejemplo,
+    el log de una verificación del panel). destinatario: si no se indica,
+    se usa GMAIL_DESTINATARIO del .env (el aviso de escritorio de siempre);
+    el panel web lo pasa explícito para avisarle a cada quien a su propio
+    correo.
+    """
     remitente = os.getenv("GMAIL_REMITENTE")
     clave_app = os.getenv("GMAIL_APP_PASSWORD")
-    destinatario = os.getenv("GMAIL_DESTINATARIO")
+    destinatario = destinatario or os.getenv("GMAIL_DESTINATARIO")
 
     if not remitente or not clave_app or not destinatario:
         print("No se pudo enviar el correo: falta configurar GMAIL_REMITENTE, "
-              "GMAIL_APP_PASSWORD o GMAIL_DESTINATARIO en el .env.")
+              "GMAIL_APP_PASSWORD o el destinatario.")
         return False
 
     mensaje = EmailMessage()
@@ -36,6 +45,19 @@ def enviar_notificacion(asunto, cuerpo):
     mensaje["From"] = remitente
     mensaje["To"] = destinatario
     mensaje.set_content(cuerpo)
+
+    for ruta_adjunto in (adjuntos or []):
+        ruta_adjunto = Path(ruta_adjunto)
+        if not ruta_adjunto.is_file():
+            continue
+        tipo_detectado, _ = mimetypes.guess_type(ruta_adjunto.name)
+        tipo_principal, tipo_secundario = (tipo_detectado.split("/", 1) if tipo_detectado else ("application", "octet-stream"))
+        mensaje.add_attachment(
+            ruta_adjunto.read_bytes(),
+            maintype=tipo_principal,
+            subtype=tipo_secundario,
+            filename=ruta_adjunto.name,
+        )
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as servidor:

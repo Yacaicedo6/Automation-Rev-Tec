@@ -316,7 +316,6 @@ def _pedir_respuesta_manual(mensaje):
     que la persona quede marcada como fallida y se pueda reintentar luego.
     """
     if not sys.stdin.isatty():
-        print("No hay una consola interactiva disponible (probablemente corriendo desde el panel web); no se puede pedir la respuesta a mano. Se salta esta persona.")
         return None
     return input(mensaje)
 
@@ -362,6 +361,73 @@ def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_e
         print(f"\nSe guardó el listado de personas con consulta fallida en:\n{ruta_fallidos}")
     except Exception as error_reporte:
         print(f"Aviso: no se pudo generar el Excel de fallidos: {error_reporte}")
+
+
+def _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, codigo_entidad):
+    """
+    Junta a TODAS las personas con alerta real guardada en la carpeta de
+    inhabilitados -de esta corrida o de corridas anteriores- en un Excel
+    aparte (Inhabilitados_<ENTIDAD>.xlsx). El motivo de esta corrida ya
+    viene capturado en vivo (documentos_inhabilitados); el de corridas
+    anteriores se lee directo del PDF ya guardado, para no dejar por fuera
+    a quien ya se había consultado antes de que existiera este reporte.
+    """
+    carpeta_inhabilitados_dir = os.path.join(directorio_base, f"Cert_{codigo_entidad}_INHABILITADOS")
+    ruta_inhabilitados = os.path.join(directorio_base, f"Inhabilitados_{codigo_entidad}.xlsx")
+
+    motivos_por_doc = dict(documentos_inhabilitados)
+
+    if os.path.isdir(carpeta_inhabilitados_dir):
+        for nombre_archivo in os.listdir(carpeta_inhabilitados_dir):
+            if not nombre_archivo.endswith('.pdf'):
+                continue
+            doc_archivo = os.path.splitext(nombre_archivo)[0].rsplit('_', 1)[-1]
+            if doc_archivo in motivos_por_doc:
+                continue  # ya se tiene el motivo capturado en vivo de esta corrida
+            ruta_pdf_existente = os.path.join(carpeta_inhabilitados_dir, nombre_archivo)
+            try:
+                with open(ruta_pdf_existente, 'rb') as f:
+                    lector = PyPDF2.PdfReader(f)
+                    texto_pdf_existente = ""
+                    for pagina in lector.pages:
+                        texto_pdf_existente += pagina.extract_text() or ""
+                motivos_por_doc[doc_archivo] = " ".join(texto_pdf_existente.split())
+            except Exception as error_lectura:
+                print(f"Aviso: no se pudo leer {nombre_archivo} para el reporte de inhabilitados: {error_lectura}")
+
+    if not motivos_por_doc:
+        if os.path.exists(ruta_inhabilitados):
+            os.remove(ruta_inhabilitados)
+        return
+
+    filas_inhabilitados = []
+    for _, fila_persona in df.iterrows():
+        doc_persona = str(fila_persona['# DOC. IDENTIDAD']).strip()
+        if doc_persona.endswith('.0'):
+            doc_persona = doc_persona[:-2]
+        if doc_persona not in motivos_por_doc:
+            continue
+
+        p_nombre_i = str(fila_persona['PRIMER NOMBRE']) if pd.notna(fila_persona['PRIMER NOMBRE']) else ""
+        s_nombre_i = str(fila_persona['SEGUNDO NOMBRE']) if pd.notna(fila_persona['SEGUNDO NOMBRE']) else ""
+        p_apellido_i = str(fila_persona['PRIMER APELLIDO']) if pd.notna(fila_persona['PRIMER APELLIDO']) else ""
+        s_apellido_i = str(fila_persona['SEGUNDO APELLIDO']) if pd.notna(fila_persona['SEGUNDO APELLIDO']) else ""
+        nombre_completo_i = f"{p_nombre_i} {s_nombre_i} {p_apellido_i} {s_apellido_i}".replace("  ", " ").strip()
+        tipo_doc_i = str(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']).strip() if pd.notna(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']) else ""
+
+        filas_inhabilitados.append({
+            "CODIGO": fila_persona.get('CODIGO', '') if 'CODIGO' in df.columns else "",
+            "NOMBRE": nombre_completo_i,
+            "TIPO_DOCUMENTO": tipo_doc_i,
+            "DOCUMENTO": doc_persona,
+            "MOTIVO": motivos_por_doc[doc_persona],
+        })
+
+    try:
+        pd.DataFrame(filas_inhabilitados).to_excel(ruta_inhabilitados, index=False)
+        print(f"\nSe guardó el listado de personas con alerta real en:\n{ruta_inhabilitados}")
+    except Exception as error_reporte:
+        print(f"Aviso: no se pudo generar el Excel de inhabilitados: {error_reporte}")
 
 def leer_personas_desde_pdf(ruta_pdf):
     """
@@ -472,6 +538,8 @@ lista_alertas_finales = alertas_historicas.copy()
 # Documento -> motivo, para el Excel de personas a las que falló la
 # consulta (distinto de una alerta real: aquí no se logró determinar nada).
 documentos_fallidos = {}
+# Documento -> texto del portal, para el Excel de personas con alerta real.
+documentos_inhabilitados = {}
 
 # ==========================================
 # 2. CONFIGURAR DESCARGAS INVISIBLES
@@ -496,9 +564,10 @@ wait_descarga = WebDriverWait(driver, 180)
 
 errores_no_manejados = 0
 fallos_consecutivos = 0
+total_personas = len(df)
 
 try:
-    for index, row in df.iterrows():
+    for contador_persona, (index, row) in enumerate(df.iterrows(), start=1):
         num_doc = str(row['# DOC. IDENTIDAD']).strip()
 
         if not num_doc[0].isdigit():
@@ -514,7 +583,7 @@ try:
         s_apellido = str(row['SEGUNDO APELLIDO']) if pd.notna(row['SEGUNDO APELLIDO']) else ""
         nombre_completo = f"{p_nombre} {s_nombre} {p_apellido} {s_apellido}".replace("  ", " ").strip()
 
-        print(f"\n--- Procesando Documento: {num_doc} ({nombre_completo}) ---")
+        print(f"\n[{contador_persona}/{total_personas}] {nombre_completo} ({num_doc})")
 
         # ==========================================
         # 3. VALIDACIÓN PREVIA (LOOK BEFORE YOU LEAP)
@@ -640,7 +709,6 @@ try:
                     exito_generacion = True
 
             if not exito_generacion:
-                print("No se pudo superar la validación. Se salta a la siguiente persona...")
                 documentos_fallidos[num_doc] = "No se pudo superar la pregunta de seguridad del portal"
                 driver.switch_to.default_content()
                 fallos_consecutivos = 0  # el portal respondió; el problema es de esta respuesta puntual
@@ -709,6 +777,7 @@ try:
                         texto_pdf += pagina.extract_text() or ""
                 texto_limpio = "".join(texto_pdf.upper().split())
             except Exception:
+                texto_pdf = ""
                 texto_limpio = ""
 
             frase_normalizada = "".join(FRASE_LIMPIA.split())
@@ -720,6 +789,7 @@ try:
                 shutil.move(ruta_esperada_normal, ruta_esperada_inhab)
                 print("Atención: se detectó una posible sanción o inhabilidad vigente. Se movió a la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
+                documentos_inhabilitados[num_doc] = " ".join(texto_pdf.split())
                 _pitido(2000, 1000)
 
             fallos_consecutivos = 0
@@ -753,6 +823,7 @@ finally:
         print("No se encontraron sanciones o inhabilidades vigentes en esta tanda.")
 
     _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, "PROC")
+    _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, "PROC")
 
     print("="*50)
     print("Cerrando navegador...")

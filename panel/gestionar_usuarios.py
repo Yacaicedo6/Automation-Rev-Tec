@@ -33,6 +33,7 @@ CAMPOS_POR_DEFECTO = {
     "correo": "",
     "celular": "",
     "acepto_terminos": False,
+    "avisar_por_correo": False,
 }
 
 

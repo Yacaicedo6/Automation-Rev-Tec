@@ -212,6 +212,11 @@ async function cargarMisRevisiones() {
 function actualizarBloqueReemplazarExcel() {
   const revision = misRevisiones.find(r => r.nombre_lote === selectRevision.value);
   bloqueReemplazarExcel.classList.toggle('hidden', !(revision && revision.tiene_excel));
+  if (revision) {
+    cargarResultados(revision.nombre_lote);
+  } else {
+    bloqueResultados.classList.add('hidden');
+  }
 }
 
 selectRevision.addEventListener('change', actualizarBloqueReemplazarExcel);
