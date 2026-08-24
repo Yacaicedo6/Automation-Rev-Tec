@@ -72,9 +72,8 @@ foreach ($puerto in $puertos) {
     $nombreReglaZeroTier = "Panel Rev-Tec ZeroTier - puerto $puerto"
     Remove-NetFirewallRule -DisplayName $nombreReglaZeroTier -ErrorAction SilentlyContinue
     New-NetFirewallRule -DisplayName $nombreReglaZeroTier -Direction Inbound -Protocol TCP -LocalPort $puerto -RemoteAddress $subredZeroTier -Action Allow -Profile Any | Out-Null
-
-    Write-Host "  Puerto $puerto -> WSL ($ipWSL)"
 }
+Write-Host "Puertos abiertos hacia WSL ($ipWSL): $($puertos -join ', ')"
 
 $ipWindows = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notmatch "Loopback|vEthernet|WSL|ZeroTier|Tailscale" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1 -ExpandProperty IPAddress)
 
@@ -109,9 +108,7 @@ if ($ipZeroTier) {
     Write-Host "    http://${ipZeroTier}:8600"
     Write-Host ""
 }
-Write-Host "Nota: las reglas de firewall que se crearon solo permiten redes"
-Write-Host "'privadas' (perfil Private) -- si tu red de Windows está marcada"
-Write-Host "como 'pública', cámbiala a privada en Configuración de Windows"
-Write-Host "para que esto funcione. El tráfico de Tailscale y ZeroTier usa"
-Write-Host "reglas aparte y no depende de este ajuste."
+Write-Host "Nota: si no entran desde la red de la oficina, revisa que esa red esté"
+Write-Host "marcada como 'Privada' (no 'Pública') en Configuración de Windows."
+Write-Host "Tailscale y ZeroTier no dependen de este ajuste."
 Write-Host "===================================================="

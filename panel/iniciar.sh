@@ -43,11 +43,11 @@ sleep 1
 sudo mkdir -p /tmp/.X11-unix 2>/dev/null
 sudo chmod 1777 /tmp/.X11-unix 2>/dev/null
 
+echo "Cupos: $MAX_SESIONES_PARALELAS (pantallas :1-:$MAX_SESIONES_PARALELAS, VNC 5901-$((5900 + MAX_SESIONES_PARALELAS)), visor web 6080-$((6079 + MAX_SESIONES_PARALELAS)))"
+
 for i in $(seq 1 "$MAX_SESIONES_PARALELAS"); do
     VNC_PORT=$((5900 + i))
     WS_PORT=$((6079 + i))
-
-    echo "Cupo $i: pantalla :$i, VNC puerto $VNC_PORT, visor web puerto $WS_PORT..."
 
     export DISPLAY=":$i"
     Xvfb ":$i" -screen 0 1280x800x24 > /dev/null 2>&1 &
@@ -72,13 +72,13 @@ echo ""
 echo "===================================================="
 echo "Listo. $MAX_SESIONES_PARALELAS cupo(s) de \"Ejecutar verificaciones\" disponibles."
 echo ""
-echo "Para ti, en este mismo equipo:  http://localhost:8600"
+echo "Este mismo equipo:  http://localhost:8600"
 echo ""
 echo "Para que tus compañeros entren desde la red, todavía hace falta un"
 echo "paso en Windows (una sola vez por reinicio de WSL): abre PowerShell"
 echo "COMO ADMINISTRADOR y corre:"
 echo "    panel\\configurar_red.ps1"
 echo ""
-echo "Deja esta ventana de terminal abierta mientras se use el panel."
+echo "Déjala abierta mientras se use el panel."
 echo "Para apagar todo: source panel/detener.sh"
 echo "===================================================="
