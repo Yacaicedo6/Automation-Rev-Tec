@@ -5,6 +5,9 @@
     <span id="estado-conexion" class="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[var(--border)] text-[var(--text-main)]">
       <span class="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]"></span> Sin iniciar
     </span>
+    <button id="btn-toggle-visor" type="button" class="text-xs px-3 py-1 rounded-full border border-[var(--border)] text-[var(--text-main)] hover:bg-[var(--hover-bg)] transition-colors">
+      Ocultar visor
+    </button>
 {% endblock %}
 
 {% block estilos %}
@@ -15,10 +18,10 @@
 {% endblock %}
 
 {% block contenido %}
-  <div class="lg:h-full grid grid-cols-1 lg:grid-cols-2">
+  <div id="grid-verificaciones" class="lg:h-full grid grid-cols-1 lg:grid-cols-2">
 
     <!-- Panel de control + logs -->
-    <section class="lg:min-h-0 flex flex-col gap-3 p-4 border-r border-[var(--border)] lg:overflow-y-auto">
+    <section id="seccion-control" class="lg:min-h-0 flex flex-col gap-3 p-4 lg:border-r border-[var(--border)] lg:overflow-y-auto">
 
       <div class="shrink-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-3">
         <div id="bloque-seleccion" class="flex flex-col gap-3">
@@ -97,7 +100,7 @@
     </section>
 
     <!-- Visor remoto del navegador (VNC embebido) -->
-    <section class="lg:min-h-0 flex flex-col gap-2 p-4">
+    <section id="seccion-visor" class="lg:min-h-0 flex flex-col gap-2 p-4">
       <div class="shrink-0">
         <h2 class="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">Navegador en vivo</h2>
         <p class="text-xs text-[var(--text-muted)] mt-0.5">Si un portal pide resolver una pregunta de seguridad o corregir un error, hazlo directamente aquí.</p>
@@ -138,6 +141,27 @@ const bloqueResultados = document.getElementById('bloque-resultados');
 const listaCarpetas = document.getElementById('lista-carpetas');
 const listaResultados = document.getElementById('lista-resultados');
 const linkDescargarZip = document.getElementById('link-descargar-zip');
+const btnToggleVisor = document.getElementById('btn-toggle-visor');
+const gridVerificaciones = document.getElementById('grid-verificaciones');
+const seccionVisor = document.getElementById('seccion-visor');
+const seccionControl = document.getElementById('seccion-control');
+
+function aplicarVisibilidadVisor(oculto) {
+  seccionVisor.classList.toggle('hidden', oculto);
+  seccionControl.classList.toggle('lg:border-r', !oculto);
+  gridVerificaciones.classList.toggle('lg:grid-cols-2', !oculto);
+  gridVerificaciones.classList.toggle('lg:grid-cols-1', oculto);
+  btnToggleVisor.textContent = oculto ? 'Mostrar visor' : 'Ocultar visor';
+}
+
+let visorOculto = localStorage.getItem('visorOculto') === '1';
+aplicarVisibilidadVisor(visorOculto);
+
+btnToggleVisor.addEventListener('click', () => {
+  visorOculto = !visorOculto;
+  localStorage.setItem('visorOculto', visorOculto ? '1' : '0');
+  aplicarVisibilidadVisor(visorOculto);
+});
 
 let verificaciones = {};
 let cancelado = false;
