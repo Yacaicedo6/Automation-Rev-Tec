@@ -228,6 +228,25 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _mapear_tipo_documento_dsex(tipo_doc_crudo):
+    """
+    Traduce el valor crudo de la columna "TIPO DOCUMENTO" del Excel al value
+    real del <select> id="tipo" del portal de Delitos Sexuales. Este portal
+    solo ofrece Cédula de Ciudadanía, Cédula de Extranjería y Pasaporte
+    (confirmado en el HTML real del formulario). Devuelve None si no
+    reconoce el tipo, para que quien llama decida saltar a esa persona en
+    vez de adivinar (antes se asumía Cédula de Ciudadanía por defecto).
+    """
+    valor = tipo_doc_crudo.upper()
+    if valor == "CC" or "CIUDADAN" in valor:
+        return "CC"
+    if valor in ("CE", "CX") or "EXTRANJER" in valor:
+        return "CX"
+    if valor in ("PA", "PP") or "PASAPORTE" in valor:
+        return "PA"
+    return None
+
+
 def _pitido(frecuencia, duracion_ms):
     """
     Pitido audible para quien esté frente al equipo cuando hay una alerta.
@@ -515,6 +534,7 @@ try:
             num_doc = num_doc[:-2]
 
         tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
+        valor_tipo_doc = _mapear_tipo_documento_dsex(tipo_doc_crudo)
 
         p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
         s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
@@ -557,6 +577,11 @@ try:
             print("El certificado ya existe en los registros. Se omite la descarga...")
             continue
 
+        if valor_tipo_doc is None:
+            print(f"Tipo de documento no reconocido: '{tipo_doc_crudo}'. Se salta sin consultar el portal...")
+            documentos_fallidos[num_doc] = f"Tipo de documento no reconocido: {tipo_doc_crudo}"
+            continue
+
         if fecha_exp is None:
             print("La fecha de expedición de esta persona está vacía o no se pudo leer del Excel. Se salta sin consultar el portal...")
             documentos_fallidos[num_doc] = "Fecha de expedición vacía o inválida en el Excel"
@@ -571,15 +596,7 @@ try:
 
             elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "tipo")))
             selector_tipo_doc = Select(elemento_tipo_doc)
-
-            if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("CC")
-            elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("CX")
-            elif "PA" in tipo_doc_crudo.upper() or "PASAPORTE" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("PA")
-            else:
-                selector_tipo_doc.select_by_value("CC")
+            selector_tipo_doc.select_by_value(valor_tipo_doc)
 
             driver.find_element(By.ID, "nuip").send_keys(num_doc)
             driver.find_element(By.ID, "fechaExpNuip").send_keys(fecha_exp)

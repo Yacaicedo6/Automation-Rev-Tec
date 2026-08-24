@@ -229,6 +229,29 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _mapear_tipo_documento_rnmc(tipo_doc_crudo):
+    """
+    Traduce el valor crudo de la columna "TIPO DOCUMENTO" del Excel al value
+    real del <select> ctl00_ContentPlaceHolder3_ddlTipoDoc del portal RNMC.
+    Devuelve None si no reconoce el tipo, para que quien llama decida saltar
+    a esa persona en vez de adivinar (antes se asumía Cédula de Ciudadanía
+    por defecto, lo que podía consultar a alguien con el tipo equivocado sin
+    que nadie se diera cuenta).
+    """
+    valor = tipo_doc_crudo.upper()
+    if valor == "CC" or "CIUDADAN" in valor:
+        return "55"
+    if valor == "TI" or "TARJETA" in valor:
+        return "56"
+    if "DOCUMENTO" in valor and "EXTRANJER" in valor:
+        return "842"  # "Documento de identificación extranjero"
+    if valor in ("CE", "CX") or "EXTRANJER" in valor:
+        return "57"
+    if valor in ("PA", "PP") or "PASAPORTE" in valor:
+        return "58"
+    return None
+
+
 def _pitido(frecuencia, duracion_ms):
     """
     Pitido audible para quien esté frente al equipo cuando hay una alerta.
@@ -502,16 +525,24 @@ try:
             num_doc = num_doc[:-2]
 
         tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
+        valor_tipo_doc = _mapear_tipo_documento_rnmc(tipo_doc_crudo)
 
-        try:
-            fecha_obj = pd.to_datetime(row['FECHA DE EXPEDICION (DD/MM/AA)'])
-            fecha_exp = fecha_obj.strftime('%d/%m/%Y')
-        except Exception:
-            # Fecha vacía o ilegible en el Excel (p. ej. una celda con formato
-            # de fecha pero un número fuera de rango, que Excel/openpyxl ya
-            # marca como error). Se detecta acá para no gastar una consulta
-            # al portal con un dato que de todas formas va a ser rechazado.
-            fecha_exp = None
+        # El portal solo pide fecha de expedición cuando el tipo es Cédula de
+        # Ciudadanía -- para los demás tipos (TI, CE, Pasaporte, etc.) el
+        # formulario ni siquiera muestra ese campo, así que no tiene sentido
+        # exigirla ni intentar llenarla en esos casos.
+        fecha_exp = None
+        if valor_tipo_doc == "55":
+            try:
+                fecha_obj = pd.to_datetime(row['FECHA DE EXPEDICION (DD/MM/AA)'])
+                fecha_exp = fecha_obj.strftime('%d/%m/%Y')
+            except Exception:
+                # Fecha vacía o ilegible en el Excel (p. ej. una celda con
+                # formato de fecha pero un número fuera de rango, que
+                # Excel/openpyxl ya marca como error). Se detecta acá para no
+                # gastar una consulta al portal con un dato que de todas
+                # formas va a ser rechazado.
+                fecha_exp = None
 
         p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
         s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
@@ -542,7 +573,12 @@ try:
             print("El certificado ya existe en los registros. Se omite la descarga...")
             continue
 
-        if fecha_exp is None:
+        if valor_tipo_doc is None:
+            print(f"Tipo de documento no reconocido: '{tipo_doc_crudo}'. Se salta sin consultar el portal...")
+            documentos_fallidos[num_doc] = f"Tipo de documento no reconocido: {tipo_doc_crudo}"
+            continue
+
+        if valor_tipo_doc == "55" and fecha_exp is None:
             print("La fecha de expedición de esta persona está vacía o no se pudo leer del Excel. Se salta sin consultar el portal...")
             documentos_fallidos[num_doc] = "Fecha de expedición vacía o inválida en el Excel"
             continue
@@ -552,28 +588,19 @@ try:
 
             elemento_tipo_doc = wait.until(EC.presence_of_element_located((By.ID, "ctl00_ContentPlaceHolder3_ddlTipoDoc")))
             selector_tipo_doc = Select(elemento_tipo_doc)
-
-            if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("55")
-            elif "TI" in tipo_doc_crudo.upper() or "IDENTIDAD" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("56")
-            elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("57")
-            elif "PA" in tipo_doc_crudo.upper() or "PASAPORTE" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("58")
-            else:
-                selector_tipo_doc.select_by_value("55")
+            selector_tipo_doc.select_by_value(valor_tipo_doc)
 
             time.sleep(2)
 
             campo_documento = wait.until(EC.presence_of_element_located((By.ID, "ctl00_ContentPlaceHolder3_txtExpediente")))
             campo_documento.send_keys(num_doc)
 
-            try:
-                campo_fecha = driver.find_element(By.ID, "txtFechaexp")
-                campo_fecha.send_keys(fecha_exp)
-            except Exception:
-                pass
+            if fecha_exp is not None:
+                try:
+                    campo_fecha = driver.find_element(By.ID, "txtFechaexp")
+                    campo_fecha.send_keys(fecha_exp)
+                except Exception:
+                    pass
 
             print("Datos llenados. Consultando...")
 

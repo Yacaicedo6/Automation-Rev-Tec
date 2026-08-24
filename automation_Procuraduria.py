@@ -292,6 +292,28 @@ def leer_personas(ruta_excel):
     return leer_personas_excel_legado(ruta_excel)
 
 
+def _mapear_tipo_documento_procuraduria(tipo_doc_crudo):
+    """
+    Traduce el valor crudo de la columna "TIPO DOCUMENTO" del Excel al value
+    real del <select> ddlTipoID del portal de Procuraduría. Este portal NO
+    ofrece Tarjeta de Identidad ni Pasaporte como opciones (confirmado en el
+    HTML real del formulario), así que esos casos quedan sin mapear a
+    propósito. Devuelve None si no reconoce el tipo, para que quien llama
+    decida saltar a esa persona en vez de adivinar (antes se asumía Cédula
+    de Ciudadanía por defecto).
+    """
+    valor = tipo_doc_crudo.upper()
+    if valor == "CC" or "CIUDADAN" in valor:
+        return "1"
+    if valor == "PEP" or "PERMISO ESPECIAL" in valor:
+        return "0"
+    if valor == "PPT" or ("PERMISO" in valor and "TEMPORAL" in valor):
+        return "10"
+    if valor in ("CE", "CX") or "EXTRANJER" in valor:
+        return "5"
+    return None
+
+
 def _pitido(frecuencia, duracion_ms):
     """
     Pitido audible para quien esté frente al equipo cuando hay una alerta.
@@ -576,6 +598,7 @@ try:
             num_doc = num_doc[:-2]
 
         tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
+        valor_tipo_doc = _mapear_tipo_documento_procuraduria(tipo_doc_crudo)
 
         p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
         s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
@@ -607,6 +630,11 @@ try:
             print("El certificado ya existe en la carpeta. Se omite la descarga...")
             continue
 
+        if valor_tipo_doc is None:
+            print(f"Tipo de documento no reconocido: '{tipo_doc_crudo}'. Se salta sin consultar el portal...")
+            documentos_fallidos[num_doc] = f"Tipo de documento no reconocido: {tipo_doc_crudo}"
+            continue
+
         try:
             # ==========================================
             # 4. MANEJO DE PÁGINA Y FORMULARIO
@@ -635,14 +663,7 @@ try:
                     break
                 continue
 
-            if "CC" in tipo_doc_crudo.upper() or "CIUDADAN" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("1")
-            elif "CX" in tipo_doc_crudo.upper() or "EXTRANJER" in tipo_doc_crudo.upper() or "CE" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("5")
-            elif "PPT" in tipo_doc_crudo.upper() or "PERMISO" in tipo_doc_crudo.upper():
-                selector_tipo_doc.select_by_value("10")
-            else:
-                selector_tipo_doc.select_by_value("1")
+            selector_tipo_doc.select_by_value(valor_tipo_doc)
 
             campo_documento = driver.find_element(By.ID, "txtNumID")
             campo_documento.send_keys(num_doc)
