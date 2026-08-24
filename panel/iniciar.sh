@@ -22,6 +22,12 @@ fi
 
 DIR_PANEL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIR_PROYECTO="$(dirname "$DIR_PANEL")"
+RUTA_INFO_RED="$DIR_PANEL/.info_red.txt"
+
+# Se limpia cualquier resumen de red viejo (de una corrida anterior) antes de
+# que configurar_red.ps1 -que corre en paralelo, en otra ventana- tenga
+# oportunidad de escribir uno nuevo.
+rm -f "$RUTA_INFO_RED" 2>/dev/null
 
 echo "Activando entorno virtual..."
 source ~/venv-rev-tec/bin/activate
@@ -73,6 +79,25 @@ echo "===================================================="
 echo "Listo. $MAX_SESIONES_PARALELAS cupo(s) de \"Ejecutar verificaciones\" disponibles."
 echo ""
 echo "Este mismo equipo:  http://localhost:8600"
+echo "===================================================="
+
+# La configuración de red corre en paralelo, en otra ventana (con permisos de
+# administrador), y puede tardar unos segundos -sobre todo si hay que
+# confirmar el aviso de Windows-. Se espera aquí hasta 30s a que deje su
+# resumen (URLs para la red, Tailscale, ZeroTier) antes de mostrarlo, para
+# que toda la información importante quede junta en esta misma ventana.
+echo "Esperando la configuración de red (ventana de administrador aparte)..."
+for _ in $(seq 1 30); do
+    [ -f "$RUTA_INFO_RED" ] && break
+    sleep 1
+done
+if [ -f "$RUTA_INFO_RED" ]; then
+    cat "$RUTA_INFO_RED"
+    rm -f "$RUTA_INFO_RED"
+else
+    echo "(La configuración de red sigue en curso o no se completó; revisa la otra ventana si tarda.)"
+fi
+
 echo ""
 echo "Déjala abierta mientras se use el panel."
 echo "Para apagar todo: source panel/detener.sh"

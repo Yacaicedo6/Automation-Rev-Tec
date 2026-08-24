@@ -91,24 +91,33 @@ try {
 
 $ipZeroTier = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceAlias "*ZeroTier*" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty IPAddress)
 
-Write-Host ""
-Write-Host "===================================================="
-Write-Host "Listo. Tus compañeros, desde la misma red, ya pueden entrar a:"
-Write-Host "    http://${ipWindows}:8600"
-Write-Host ""
+$lineasResumen = @()
+$lineasResumen += ""
+$lineasResumen += "===================================================="
+$lineasResumen += "Listo. Tus compañeros, desde la misma red, ya pueden entrar a:"
+$lineasResumen += "    http://${ipWindows}:8600"
+$lineasResumen += ""
 if ($ipTailscale) {
-    Write-Host "Y desde fuera de la oficina, con Tailscale instalado y conectado"
-    Write-Host "a esta misma tailnet, pueden entrar a:"
-    Write-Host "    http://${ipTailscale}:8600"
-    Write-Host ""
+    $lineasResumen += "Y desde fuera de la oficina, con Tailscale instalado y conectado"
+    $lineasResumen += "a esta misma tailnet, pueden entrar a:"
+    $lineasResumen += "    http://${ipTailscale}:8600"
+    $lineasResumen += ""
 }
 if ($ipZeroTier) {
-    Write-Host "Y desde fuera de la oficina, con ZeroTier instalado y unido a"
-    Write-Host "la red REV_TEC_ADMIN, pueden entrar a:"
-    Write-Host "    http://${ipZeroTier}:8600"
-    Write-Host ""
+    $lineasResumen += "Y desde fuera de la oficina, con ZeroTier instalado y unido a"
+    $lineasResumen += "la red REV_TEC_ADMIN, pueden entrar a:"
+    $lineasResumen += "    http://${ipZeroTier}:8600"
+    $lineasResumen += ""
 }
-Write-Host "Nota: si no entran desde la red de la oficina, revisa que esa red esté"
-Write-Host "marcada como 'Privada' (no 'Pública') en Configuración de Windows."
-Write-Host "Tailscale y ZeroTier no dependen de este ajuste."
-Write-Host "===================================================="
+$lineasResumen += "Nota: si no entran desde la red de la oficina, revisa que esa red esté"
+$lineasResumen += "marcada como 'Privada' (no 'Pública') en Configuración de Windows."
+$lineasResumen += "Tailscale y ZeroTier no dependen de este ajuste."
+$lineasResumen += "===================================================="
+
+$lineasResumen | ForEach-Object { Write-Host $_ }
+
+# Se deja este resumen en un archivo (dentro de panel/, que WSL también ve)
+# para que iniciar.sh lo recoja y lo muestre en la ventana del panel -- así
+# la persona no tiene que quedarse revisando dos ventanas distintas.
+$rutaInfoRed = Join-Path $PSScriptRoot ".info_red.txt"
+[System.IO.File]::WriteAllText($rutaInfoRed, ($lineasResumen -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))

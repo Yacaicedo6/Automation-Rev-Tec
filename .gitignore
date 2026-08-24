@@ -19,6 +19,10 @@ panel/espacios_usuario/
 # de cada equipo, no tiene sentido llevarlos a git)
 *.lnk
 
+# Resumen de red que configurar_red.ps1 le deja a iniciar.sh -- se genera y
+# se borra en cada arranque, no tiene sentido llevarlo a git
+panel/.info_red.txt
+
 # Archivos compilados de Python
 __pycache__/
 *.pyc
