@@ -69,6 +69,29 @@ if not API_KEY_2CAPTCHA:
 
 solver = TwoCaptcha(API_KEY_2CAPTCHA)
 
+# Frases que el portal Judicial usa para indicar que la persona no tiene
+# problemas legales -- se han visto al menos estas dos variantes distintas
+# para lo que en la práctica es el mismo resultado "limpio". Si aparece
+# otra variante no contemplada aquí, se clasifica por error como alerta
+# real -- si eso pasa, hay que agregar la frase nueva a esta lista.
+FRASES_LIMPIO_JUDICIAL = (
+    "NO TIENE ASUNTOS PENDIENTES",
+    "ACTUALMENTE NO ES REQUERIDO POR AUTORIDAD JUDICIAL ALGUNA",
+)
+
+
+def _es_resultado_limpio_judicial(texto):
+    """
+    Compara contra las frases de "limpio" conocidas del portal Judicial,
+    ignorando mayúsculas y espacios -- PyPDF2 a veces inserta espacios
+    sueltos en medio de una palabra al extraer texto de un PDF (ej.
+    "ASUNT OS" en vez de "ASUNTOS"), y esto evita que eso rompa la
+    comparación tanto para texto de PDF como para texto vivo del navegador.
+    """
+    texto_normalizado = "".join(texto.upper().split())
+    return any("".join(frase.split()) in texto_normalizado for frase in FRASES_LIMPIO_JUDICIAL)
+
+
 # ==========================================
 # 1. FUNCIÓN DE AUDITORÍA RETROACTIVA
 # ==========================================
@@ -93,11 +116,7 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
                     for pagina in lector.pages:
                         texto_pdf += pagina.extract_text() or ""
 
-                # Normalización Pythonica: Eliminar todos los espacios y saltos de línea
-                texto_limpio = "".join(texto_pdf.upper().split())
-
-                # Frase clave normalizada
-                if "NOTIENEASUNTOSPENDIENTES" not in texto_limpio:
+                if not _es_resultado_limpio_judicial(texto_pdf):
                     os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
@@ -744,7 +763,7 @@ try:
                 lecturas_iguales_seguidas = 0
                 for _ in range(25):
                     texto_pantalla = driver.find_element(By.TAG_NAME, "body").text
-                    if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
+                    if _es_resultado_limpio_judicial(texto_pantalla):
                         break
                     if texto_pantalla == texto_anterior:
                         lecturas_iguales_seguidas += 1
@@ -755,7 +774,7 @@ try:
                     texto_anterior = texto_pantalla
                     time.sleep(1)
 
-                if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
+                if _es_resultado_limpio_judicial(texto_pantalla):
                     ruta_final_guardado = ruta_esperada_normal
                     print("Resultados limpios. Se guarda en la carpeta estándar...")
                 elif "INFORMA:" in texto_pantalla.upper():
