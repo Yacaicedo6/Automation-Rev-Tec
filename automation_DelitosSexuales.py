@@ -525,8 +525,12 @@ try:
         try:
             fecha_obj = pd.to_datetime(row['FECHA DE EXPEDICION (DD/MM/AA)'])
             fecha_exp = fecha_obj.strftime('%d/%m/%Y')
-        except:
-            fecha_exp = str(row['FECHA DE EXPEDICION (DD/MM/AA)'])
+        except Exception:
+            # Fecha vacía o ilegible en el Excel (p. ej. una celda con formato
+            # de fecha pero un número fuera de rango, que Excel/openpyxl ya
+            # marca como error). Se detecta acá para no gastar una consulta
+            # al portal con un dato que de todas formas va a ser rechazado.
+            fecha_exp = None
 
         print(f"\n[{contador_persona}/{total_personas}] {nombre_completo} ({num_doc})")
 
@@ -551,6 +555,11 @@ try:
         # Validar en ambas carpetas y ambos formatos de nombre
         if any(os.path.exists(r) for r in (ruta_esperada_normal, ruta_esperada_inhab, ruta_vieja_normal, ruta_vieja_inhab)):
             print("El certificado ya existe en los registros. Se omite la descarga...")
+            continue
+
+        if fecha_exp is None:
+            print("La fecha de expedición de esta persona está vacía o no se pudo leer del Excel. Se salta sin consultar el portal...")
+            documentos_fallidos[num_doc] = "Fecha de expedición vacía o inválida en el Excel"
             continue
 
         try:

@@ -325,6 +325,72 @@ def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_e
     except Exception as error_reporte:
         print(f"Aviso: no se pudo generar el Excel de fallidos: {error_reporte}")
 
+def _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, codigo_entidad):
+    """
+    Junta a TODAS las personas con alerta real guardada en la carpeta de
+    inhabilitados -de esta corrida o de corridas anteriores- en un Excel
+    aparte (Inhabilitados_<ENTIDAD>.xlsx). El motivo de esta corrida ya
+    viene capturado en vivo (documentos_inhabilitados); el de corridas
+    anteriores se lee directo del PDF ya guardado, para no dejar por fuera
+    a quien ya se había consultado antes de que existiera este reporte.
+    """
+    carpeta_inhabilitados_dir = os.path.join(directorio_base, f"Cert_{codigo_entidad}_INHABILITADOS")
+    ruta_inhabilitados = os.path.join(directorio_base, f"Inhabilitados_{codigo_entidad}.xlsx")
+
+    motivos_por_doc = dict(documentos_inhabilitados)
+
+    if os.path.isdir(carpeta_inhabilitados_dir):
+        for nombre_archivo in os.listdir(carpeta_inhabilitados_dir):
+            if not nombre_archivo.endswith('.pdf'):
+                continue
+            doc_archivo = os.path.splitext(nombre_archivo)[0].rsplit('_', 1)[-1]
+            if doc_archivo in motivos_por_doc:
+                continue  # ya se tiene el motivo capturado en vivo de esta corrida
+            ruta_pdf_existente = os.path.join(carpeta_inhabilitados_dir, nombre_archivo)
+            try:
+                with open(ruta_pdf_existente, 'rb') as f:
+                    lector = PyPDF2.PdfReader(f)
+                    texto_pdf_existente = ""
+                    for pagina in lector.pages:
+                        texto_pdf_existente += pagina.extract_text() or ""
+                motivos_por_doc[doc_archivo] = " ".join(texto_pdf_existente.split())
+            except Exception as error_lectura:
+                print(f"Aviso: no se pudo leer {nombre_archivo} para el reporte de inhabilitados: {error_lectura}")
+
+    if not motivos_por_doc:
+        if os.path.exists(ruta_inhabilitados):
+            os.remove(ruta_inhabilitados)
+        return
+
+    filas_inhabilitados = []
+    for _, fila_persona in df.iterrows():
+        doc_persona = str(fila_persona['# DOC. IDENTIDAD']).strip()
+        if doc_persona.endswith('.0'):
+            doc_persona = doc_persona[:-2]
+        if doc_persona not in motivos_por_doc:
+            continue
+
+        p_nombre_i = str(fila_persona['PRIMER NOMBRE']) if pd.notna(fila_persona['PRIMER NOMBRE']) else ""
+        s_nombre_i = str(fila_persona['SEGUNDO NOMBRE']) if pd.notna(fila_persona['SEGUNDO NOMBRE']) else ""
+        p_apellido_i = str(fila_persona['PRIMER APELLIDO']) if pd.notna(fila_persona['PRIMER APELLIDO']) else ""
+        s_apellido_i = str(fila_persona['SEGUNDO APELLIDO']) if pd.notna(fila_persona['SEGUNDO APELLIDO']) else ""
+        nombre_completo_i = f"{p_nombre_i} {s_nombre_i} {p_apellido_i} {s_apellido_i}".replace("  ", " ").strip()
+        tipo_doc_i = str(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']).strip() if pd.notna(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']) else ""
+
+        filas_inhabilitados.append({
+            "CODIGO": fila_persona.get('CODIGO', '') if 'CODIGO' in df.columns else "",
+            "NOMBRE": nombre_completo_i,
+            "TIPO_DOCUMENTO": tipo_doc_i,
+            "DOCUMENTO": doc_persona,
+            "MOTIVO": motivos_por_doc[doc_persona],
+        })
+
+    try:
+        pd.DataFrame(filas_inhabilitados).to_excel(ruta_inhabilitados, index=False)
+        print(f"\nSe guardó el listado de personas con alerta real en:\n{ruta_inhabilitados}")
+    except Exception as error_reporte:
+        print(f"Aviso: no se pudo generar el Excel de inhabilitados: {error_reporte}")
+
 def leer_personas_desde_pdf(ruta_pdf):
     """
     Extrae a las personas directamente del PDF de "Autorización para consulta
@@ -439,12 +505,16 @@ lista_inconclusos = []
 # Documento -> motivo, para el Excel de personas a las que falló la
 # consulta (distinto de una alerta real: aquí no se logró determinar nada).
 documentos_fallidos = {}
+# Documento -> texto del portal, para las personas con un asunto judicial
+# real pendiente (distinto de "inconcluso": aquí sí se confirmó un resultado).
+documentos_inhabilitados = {}
 
 print("Comprobando disponibilidad del portal Judicial de la Policía...")
 if not verificar_portal_disponible(URL_JUDICIAL):
     print("Atención: el portal Judicial no respondió bien en esta comprobación (puede estar caído, muy lento o en mantenimiento).")
-    if input("¿Continuar de todas formas? (s/n): ").strip().lower() != "s":
-        print("Ejecución cancelada por el usuario.")
+    respuesta_continuar = _pedir_respuesta_manual("¿Continuar de todas formas? (s/n): ")
+    if respuesta_continuar is None or respuesta_continuar.strip().lower() != "s":
+        print("Ejecución cancelada: el portal no respondió y no hay confirmación para continuar de todas formas.")
         sys.exit(1)
 else:
     print("El portal Judicial respondió correctamente.")
@@ -667,14 +737,23 @@ try:
                 if "NO TIENE ASUNTOS PENDIENTES" in texto_pantalla.upper():
                     ruta_final_guardado = ruta_esperada_normal
                     print("Resultados limpios. Se guarda en la carpeta estándar...")
+                elif "INFORMA:" in texto_pantalla.upper():
+                    # El portal sí alcanzó a mostrar un resultado real (no es
+                    # la pantalla a medio cargar, que nunca llega a incluir
+                    # "informa:") y ese resultado no es la frase de "limpio"
+                    # conocida: es un asunto judicial real que requiere
+                    # revisión manual, igual que RNMC con su "INFORMA:".
+                    ruta_final_guardado = ruta_esperada_inhab
+                    print("Atención: se detectó un posible asunto judicial pendiente. Se guarda en la carpeta de alertas...")
+                    lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
+                    documentos_inhabilitados[num_doc] = " ".join(texto_pantalla.split())
+                    _pitido(2000, 1000)
                 else:
-                    # Cualquier otro caso -no solo "la pantalla nunca cambió"-
-                    # se trata como "no se pudo confirmar" en vez de asumir
-                    # una alerta real: ya se vio en la práctica que una página
-                    # que se queda a medio cargar puede diferir un poco de la
-                    # foto de antes de consultar sin que eso signifique un
-                    # antecedente de verdad. Es más seguro pedir reintento que
-                    # sonar una alarma legal sin evidencia real detrás.
+                    # Ni la frase de limpio ni "informa:" aparecieron: la
+                    # página se quedó a medio cargar (p. ej. solo el pie de
+                    # página, sin resultado real) en vez de mostrar algo
+                    # concreto. Es más seguro pedir reintento que asumir
+                    # cualquiera de las dos cosas sin evidencia real detrás.
                     ruta_final_guardado = ruta_esperada_inconcluso
                     print("Atención: no se pudo confirmar el resultado (el portal no devolvió el mensaje esperado). Se guarda para reintentar más tarde, sin marcarlo como alerta...")
                     lista_inconclusos.append(nombre_archivo_esperado.replace(".pdf", ""))
@@ -736,6 +815,7 @@ finally:
         print(f"Quedaron en:\n{carpeta_inconclusos}\nVuelve a correr el script más tarde para reintentarlas.")
 
     _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, "JUD")
+    _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, "JUD")
 
     print("="*50)
     print("Cerrando navegador...")
