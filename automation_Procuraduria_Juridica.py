@@ -25,10 +25,21 @@ FRASE_LIMPIA = "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES"
 def resolver_pregunta_procuraduria(pregunta_texto, nit, razon_social):
     """
     Evalúa la pregunta dinámica de seguridad del portal y retorna la
-    respuesta exacta. Es la misma lógica que para persona natural -- las
-    preguntas matemáticas, de dígitos del documento y de geografía no
-    dependen de si es una persona o una empresa; solo la variante "primer
-    nombre" usa razon_social como mejor aproximación disponible.
+    respuesta exacta. Las preguntas matemáticas, de dígitos del documento y
+    de geografía no dependen de si es una persona o una empresa.
+
+    La variante "primer nombre" SÍ es distinta: se probó usar la primera
+    palabra de la razón social (o su conteo de letras) como respuesta y el
+    portal la rechazó de forma consistente, incluso cuando el conteo de
+    letras era matemáticamente correcto (ver conversación del 2026-08-25).
+    Todo indica que esa pregunta pide el nombre de una persona real
+    registrada ante la Procuraduría para ese NIT (probablemente el
+    representante legal), dato que no está en el Excel de jurídicas -- así
+    que a propósito NO se intenta adivinar una respuesta aquí: se deja caer
+    al final de la función (devuelve "") para que quien llama la trate como
+    pregunta desconocida y la persona jurídica quede en Fallidos con un
+    motivo claro, en vez de gastar un intento en una respuesta que ya se
+    sabe que va a ser rechazada.
     """
     p = unicodedata.normalize('NFKD', pregunta_texto).encode('ASCII', 'ignore').decode('utf-8').lower()
     p = p.replace("vallle", "valle")
@@ -44,13 +55,7 @@ def resolver_pregunta_procuraduria(pregunta_texto, nit, razon_social):
         elif operador in ['x', '*']: return str(num1 * num2)
 
     if "primer nombre" in p:
-        primer_token = razon_social.split()[0] if razon_social and razon_social.split() else ""
-        if "cantidad de letras" in p:
-            return str(len(primer_token))
-        elif "dos primeras letras" in p or "2 primeras letras" in p:
-            return primer_token[:2].lower() if primer_token else ""
-        else:
-            return primer_token.lower()
+        return None  # pregunta reconocida, pero no aplicable a personas jurídicas
 
     if "tres primeros" in p or "3 primeros" in p: return str(nit)[:3]
     if "dos ultimos" in p or "2 ultimos" in p: return str(nit)[-2:]
@@ -482,6 +487,34 @@ try:
             print(f"Pregunta detectada: {label_pregunta}")
 
             respuesta_calculada = resolver_pregunta_procuraduria(label_pregunta, nit, razon_social)
+
+            # Si toca una pregunta de "primer nombre" (pide el nombre de una
+            # persona real que no tenemos para personas jurídicas), el
+            # portal ofrece un botón para refrescarla y mostrar otra al azar
+            # -- se reintenta unas cuantas veces antes de darse por vencido,
+            # en vez de saltar la empresa a la primera pregunta desfavorable.
+            intentos_refrescar_pregunta = 0
+            max_intentos_refrescar_pregunta = 5
+            while respuesta_calculada is None and intentos_refrescar_pregunta < max_intentos_refrescar_pregunta:
+                intentos_refrescar_pregunta += 1
+                try:
+                    btn_refrescar = driver.find_element(By.ID, "ImageButton1")
+                    driver.execute_script("arguments[0].click();", btn_refrescar)
+                    time.sleep(1.5)
+                    label_pregunta = driver.find_element(By.ID, "lblPregunta").text
+                    print(f"Pregunta refrescada ({intentos_refrescar_pregunta}/{max_intentos_refrescar_pregunta}): {label_pregunta}")
+                    respuesta_calculada = resolver_pregunta_procuraduria(label_pregunta, nit, razon_social)
+                except Exception as e:
+                    print(f"No se pudo refrescar la pregunta: {e}")
+                    break
+
+            if respuesta_calculada is None:
+                # Se agotaron los reintentos de refrescar y ninguna pregunta
+                # resultó respondible. No es un fallo del portal, así que no
+                # cuenta para el circuito ni suena la alarma.
+                print("No se logró una pregunta respondible para personas jurídicas tras varios intentos de refrescar. Se salta esta empresa...")
+                documentos_fallidos[nit] = "Pregunta de seguridad requiere el nombre de una persona (no disponible para personas jurídicas)"
+                continue
 
             if not respuesta_calculada:
                 _pitido(1000, 500)

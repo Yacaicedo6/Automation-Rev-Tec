@@ -64,12 +64,18 @@
           </div>
 
           <div id="bloque-fuente-juridicas" class="hidden flex-col gap-2">
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-            <input id="nombre-revision-juridicas" type="text" placeholder="Ej: Personas jurídicas Mundial de Salsa"
-                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de personas jurídicas (Código, Razón Social, Tipo de identificación, NIT)</label>
-            <input id="archivo-juridicas" type="file" accept=".xlsx,.xls"
-                   class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión de jurídicas existente (opcional)</label>
+            <select id="select-revision-juridicas" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+              <option value="">-- Subir un Excel nuevo --</option>
+            </select>
+            <div id="bloque-juridicas-nueva" class="flex flex-col gap-2 mt-1">
+              <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+              <input id="nombre-revision-juridicas" type="text" placeholder="Ej: Personas jurídicas Mundial de Salsa"
+                     class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+              <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de personas jurídicas (Código, Razón Social, Tipo de identificación, NIT)</label>
+              <input id="archivo-juridicas" type="file" accept=".xlsx,.xls"
+                     class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+            </div>
           </div>
 
           <div>
@@ -141,6 +147,8 @@ const nombreRevisionExcelInput = document.getElementById('nombre-revision-excel'
 const archivoExcelInput = document.getElementById('archivo-excel');
 const nombreRevisionJuridicasInput = document.getElementById('nombre-revision-juridicas');
 const archivoJuridicasInput = document.getElementById('archivo-juridicas');
+const selectRevisionJuridicas = document.getElementById('select-revision-juridicas');
+const bloqueJuridicasNueva = document.getElementById('bloque-juridicas-nueva');
 const bloqueSeleccion = document.getElementById('bloque-seleccion');
 const bloqueFuenteRevision = document.getElementById('bloque-fuente-revision');
 const bloqueFuenteSubida = document.getElementById('bloque-fuente-subida');
@@ -261,6 +269,31 @@ function actualizarBloqueReemplazarExcel() {
     bloqueResultados.classList.add('hidden');
   }
 }
+
+let misRevisionesJuridicas = [];
+
+async function cargarMisRevisionesJuridicas() {
+  const resp = await fetch('/api/mis-lotes-juridicas');
+  const datos = await resp.json();
+  misRevisionesJuridicas = datos.lotes || [];
+  selectRevisionJuridicas.innerHTML = '<option value="">-- Subir un Excel nuevo --</option>';
+  for (const revision of misRevisionesJuridicas) {
+    const opcion = document.createElement('option');
+    opcion.value = revision.nombre_lote;
+    opcion.textContent = `${revision.nombre_lote} (${revision.total_personas ?? '?'} empresa(s))`;
+    selectRevisionJuridicas.appendChild(opcion);
+  }
+}
+
+selectRevisionJuridicas.addEventListener('change', () => {
+  const nombreLote = selectRevisionJuridicas.value;
+  bloqueJuridicasNueva.classList.toggle('hidden', !!nombreLote);
+  if (nombreLote) {
+    cargarResultados(nombreLote);
+  } else {
+    bloqueResultados.classList.add('hidden');
+  }
+});
 
 selectRevision.addEventListener('change', actualizarBloqueReemplazarExcel);
 
@@ -418,6 +451,16 @@ btnIniciar.addEventListener('click', async () => {
     nombreRevision = datos.nombre_lote;
     archivo = datos.archivo;
     await cargarMisRevisiones();
+  } else if (selectRevisionJuridicas.value) {
+    // Ya existe esta revisión de jurídicas -- se reutiliza directo, sin
+    // volver a subir el Excel.
+    const revision = misRevisionesJuridicas.find(r => r.nombre_lote === selectRevisionJuridicas.value);
+    if (!revision || !revision.archivo_para_verificar) {
+      agregarLinea('ERROR: no se encontró el Excel de esa revisión.');
+      return;
+    }
+    nombreRevision = revision.nombre_lote;
+    archivo = revision.archivo_para_verificar;
   } else {
     const nombreRevisionNueva = nombreRevisionJuridicasInput.value.trim();
     const archivoJuridicas = archivoJuridicasInput.files[0];
@@ -438,6 +481,7 @@ btnIniciar.addEventListener('click', async () => {
     }
     nombreRevision = datos.nombre_lote;
     archivo = datos.archivo;
+    await cargarMisRevisionesJuridicas();
   }
 
   cancelado = false;
@@ -470,5 +514,6 @@ btnDetener.addEventListener('click', async () => {
 
 cargarVerificaciones();
 cargarMisRevisiones();
+cargarMisRevisionesJuridicas();
 </script>
 {% endblock %}

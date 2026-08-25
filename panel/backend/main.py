@@ -702,6 +702,35 @@ def listar_mis_lotes(request: Request):
     return {"lotes": lotes}
 
 
+@app.get("/api/mis-lotes-juridicas")
+def listar_mis_lotes_juridicas(request: Request):
+    """Igual que /api/mis-lotes, pero solo las revisiones que tienen un
+    Excel de personas jurídicas (JURIDICAS.xlsx) -- para el selector de
+    "usar una revisión jurídica mía" en Ejecutar verificaciones."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    lotes = []
+    for carpeta in sorted(_carpeta_usuario(usuario).iterdir(), key=lambda p: p.name.lower()):
+        if not carpeta.is_dir():
+            continue
+        ruta_juridicas = next((f for f in (carpeta / "JURIDICAS.xlsx", carpeta / "JURIDICAS.xls") if f.is_file()), None)
+        if ruta_juridicas is None:
+            continue
+        total_personas = None
+        try:
+            total_personas = len(_leer_juridicas_excel_panorama(ruta_juridicas))
+        except Exception:
+            total_personas = None
+        lotes.append({
+            "nombre_lote": carpeta.name,
+            "total_personas": total_personas,
+            "archivo_para_verificar": ruta_juridicas.name,
+        })
+    return {"lotes": lotes}
+
+
 @app.get("/api/lote/{nombre_lote}/archivos")
 def listar_archivos_lote(request: Request, nombre_lote: str):
     usuario, error = _api_o_401(request)
@@ -899,6 +928,14 @@ ENTIDADES = [
     ("DSEX", "Delitos sexuales"),
 ]
 
+# Una revisión de personas jurídicas es un tipo de lote distinto (Código,
+# Razón Social, NIT en vez de nombre/documento de persona natural), con solo
+# estas 2 entidades -- las únicas que ofrecen consulta por NIT.
+ENTIDADES_JURIDICAS = [
+    ("CONTJUR", "Contraloría (PJ)"),
+    ("PROCJUR", "Procuraduría (PJ)"),
+]
+
 
 def _mapa_certificados_entidad(carpeta_lote, codigo):
     """
@@ -939,12 +976,12 @@ def _nombre_persona(fila):
     return nombre or str(fila.get("DOC", ""))
 
 
-def _carpetas_certificados_existentes(carpeta_lote):
+def _carpetas_certificados_existentes(carpeta_lote, entidades=ENTIDADES):
     """Entidades que ya tienen al menos un certificado descargado en esta
     revisión -- para ofrecer su descarga por separado en vez de solo el
     .zip completo."""
     codigos = []
-    for codigo, _etiqueta in ENTIDADES:
+    for codigo, _etiqueta in entidades:
         normal = carpeta_lote / f"Cert_{codigo}"
         alerta = carpeta_lote / f"Cert_{codigo}_INHABILITADOS"
         if any(c.is_dir() and any(c.glob("*.pdf")) for c in (normal, alerta)):
@@ -1010,6 +1047,51 @@ def _leer_postulantes_excel_panorama(ruta_excel):
     return pd.DataFrame(filas)
 
 
+def _leer_juridicas_excel_panorama(ruta_excel):
+    """
+    Lee solo razón social y NIT del Excel de personas jurídicas (Código,
+    Razón Social, Tipo de identificación, NIT) -- lo mínimo que necesita
+    Panorama para mostrarlas, sin duplicar la lógica de los
+    automation_*_Juridica.py.
+    """
+    try:
+        encabezados = pd.read_excel(ruta_excel, sheet_name=0, header=0, nrows=0)
+    except Exception:
+        return pd.DataFrame()
+    encabezados.columns = encabezados.columns.str.strip()
+    columnas = list(encabezados.columns)
+
+    col_razon = _columna_que_contiene_panorama(columnas, "RAZON")
+    col_nit = (
+        _columna_que_contiene_panorama(columnas, "NIT")
+        or _columna_que_contiene_panorama(columnas, "IDENTIFICACION", "TRIBUTARIA")
+        or _columna_que_contiene_panorama(columnas, "NUMERO", "IDENTIFICACION")
+    )
+    if not (col_razon and col_nit):
+        return pd.DataFrame()
+
+    try:
+        df = pd.read_excel(ruta_excel, sheet_name=0, header=0, dtype={col_nit: str})
+    except Exception:
+        return pd.DataFrame()
+    df.columns = df.columns.str.strip()
+    df = df.dropna(subset=[col_nit])
+
+    filas = []
+    for _, fila in df.iterrows():
+        nit = re.sub(r"\D", "", str(fila[col_nit])) if pd.notna(fila[col_nit]) else ""
+        if not nit:
+            continue
+        filas.append({
+            "DOC": nit,
+            "PRIMER_NOMBRE": str(fila[col_razon]).strip() if pd.notna(fila[col_razon]) else "",
+            "SEGUNDO_NOMBRE": "",
+            "PRIMER_APELLIDO": "",
+            "SEGUNDO_APELLIDO": "",
+        })
+    return pd.DataFrame(filas)
+
+
 def _info_lote_panorama(carpeta_lote, propietario):
     """
     No depende de haber pasado por "Preparar personas": lee a quien esté
@@ -1021,15 +1103,26 @@ def _info_lote_panorama(carpeta_lote, propietario):
     ruta_csv = carpeta_lote / "personas_preparadas.csv"
     ruta_pdf = carpeta_lote / "AUT_CONS_ANTEC.pdf"
     ruta_excel = next((f for f in (carpeta_lote / "POSTULANTES.xlsx", carpeta_lote / "POSTULANTES.xls") if f.is_file()), None)
+    ruta_juridicas = next((f for f in (carpeta_lote / "JURIDICAS.xlsx", carpeta_lote / "JURIDICAS.xls") if f.is_file()), None)
+
+    # Una revisión de personas jurídicas (Código, Razón Social, NIT) es un
+    # tipo de lote distinto al de personas naturales -- se detecta cuando no
+    # hay ninguna fuente de persona natural pero sí un Excel de jurídicas, y
+    # usa sus propias 2 entidades en vez de las 5 de siempre.
+    es_juridica = not (ruta_csv.is_file() or ruta_pdf.is_file() or ruta_excel is not None) and ruta_juridicas is not None
+    entidades_lote = ENTIDADES_JURIDICAS if es_juridica else ENTIDADES
 
     item = {
         "nombre": carpeta_lote.name,
         "propietario": propietario,
-        "carpetas_certificados": _carpetas_certificados_existentes(carpeta_lote),
+        "carpetas_certificados": _carpetas_certificados_existentes(carpeta_lote, entidades_lote),
+        "es_juridica": es_juridica,
     }
 
     try:
-        if ruta_csv.is_file():
+        if es_juridica:
+            df_grupo = _leer_juridicas_excel_panorama(ruta_juridicas).fillna("")
+        elif ruta_csv.is_file():
             df_grupo = pd.read_csv(ruta_csv, dtype={"DOC": str}).fillna("")
         elif ruta_pdf.is_file():
             df_grupo = pp.leer_autorizaciones(str(ruta_pdf)).fillna("")
@@ -1047,14 +1140,14 @@ def _info_lote_panorama(carpeta_lote, propietario):
 
     pendientes_revision = int((df_grupo["REVISAR"] == "SI").sum()) if "REVISAR" in df_grupo.columns else 0
 
-    mapas_entidad = {codigo: _mapa_certificados_entidad(carpeta_lote, codigo) for codigo, _etiqueta in ENTIDADES}
+    mapas_entidad = {codigo: _mapa_certificados_entidad(carpeta_lote, codigo) for codigo, _etiqueta in entidades_lote}
 
-    entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in ENTIDADES}
+    entidades = {codigo: {"etiqueta": etiqueta, "alertas": 0, "ok": 0, "total": 0} for codigo, etiqueta in entidades_lote}
     personas = []
     for _, fila in df_grupo.iterrows():
         doc = str(fila["DOC"])
         estados_persona = {}
-        for codigo, _etiqueta in ENTIDADES:
+        for codigo, _etiqueta in entidades_lote:
             estado, ruta_relativa = mapas_entidad[codigo].get(doc, ("pendiente", None))
             estados_persona[codigo] = {"estado": estado, "archivo": ruta_relativa}
             entidades[codigo]["total"] += 1
