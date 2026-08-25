@@ -25,10 +25,11 @@
 
       <div class="shrink-0 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-4 flex flex-col gap-3">
         <div id="bloque-seleccion" class="flex flex-col gap-3">
-          <div class="flex gap-4 text-xs border-b border-[var(--border)]">
+          <div class="flex gap-4 text-xs border-b border-[var(--border)] flex-wrap">
             <button type="button" data-fuente="revision" class="pestana-fuente activa pb-2">Usar una revisión mía</button>
             <button type="button" data-fuente="subida" class="pestana-fuente pb-2">Subir un PDF directo</button>
             <button type="button" data-fuente="excel" class="pestana-fuente pb-2">Subir un Excel directo</button>
+            <button type="button" data-fuente="juridicas" class="pestana-fuente pb-2">Personas jurídicas</button>
           </div>
 
           <div id="bloque-fuente-revision" class="flex flex-col gap-2">
@@ -59,6 +60,15 @@
                    class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
             <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
             <input id="archivo-excel" type="file" accept=".xlsx,.xls"
+                   class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
+          </div>
+
+          <div id="bloque-fuente-juridicas" class="hidden flex-col gap-2">
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+            <input id="nombre-revision-juridicas" type="text" placeholder="Ej: Personas jurídicas Mundial de Salsa"
+                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de personas jurídicas (Código, Razón Social, Tipo de identificación, NIT)</label>
+            <input id="archivo-juridicas" type="file" accept=".xlsx,.xls"
                    class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
           </div>
 
@@ -129,10 +139,13 @@ const nombreRevisionSubidaInput = document.getElementById('nombre-revision-subid
 const archivoSubidaInput = document.getElementById('archivo-subida');
 const nombreRevisionExcelInput = document.getElementById('nombre-revision-excel');
 const archivoExcelInput = document.getElementById('archivo-excel');
+const nombreRevisionJuridicasInput = document.getElementById('nombre-revision-juridicas');
+const archivoJuridicasInput = document.getElementById('archivo-juridicas');
 const bloqueSeleccion = document.getElementById('bloque-seleccion');
 const bloqueFuenteRevision = document.getElementById('bloque-fuente-revision');
 const bloqueFuenteSubida = document.getElementById('bloque-fuente-subida');
 const bloqueFuenteExcel = document.getElementById('bloque-fuente-excel');
+const bloqueFuenteJuridicas = document.getElementById('bloque-fuente-juridicas');
 const logEntries = document.getElementById('log-entries');
 const estadoConexion = document.getElementById('estado-conexion');
 const visorVacio = document.getElementById('visor-vacio');
@@ -176,6 +189,11 @@ document.querySelectorAll('.pestana-fuente').forEach(boton => {
     bloqueFuenteRevision.classList.toggle('hidden', fuenteActiva !== 'revision');
     bloqueFuenteSubida.classList.toggle('hidden', fuenteActiva !== 'subida');
     bloqueFuenteExcel.classList.toggle('hidden', fuenteActiva !== 'excel');
+    bloqueFuenteJuridicas.classList.toggle('hidden', fuenteActiva !== 'juridicas');
+    // Personas jurídicas solo ofrece Contraloría y Procuraduría (las únicas
+    // dos que consultan por NIT) -- el resto de pestañas usa el checklist
+    // normal de las 5 verificaciones de persona natural.
+    cargarVerificaciones(fuenteActiva === 'juridicas' ? '/api/verificaciones-juridicas' : '/api/verificaciones');
   });
 });
 
@@ -196,10 +214,11 @@ function ocultarVisor(mensaje) {
 const ETIQUETAS_CORTAS_VERIFICACION = {
   rnmc: 'RNMC', contraloria: 'Contraloría', procuraduria: 'Procuraduría',
   judicial: 'Judicial', dsex: 'Delitos sexuales',
+  contjur: 'Contraloría (PJ)', procjur: 'Procuraduría (PJ)',
 };
 
-async function cargarVerificaciones() {
-  const resp = await fetch('/api/verificaciones');
+async function cargarVerificaciones(endpoint = '/api/verificaciones') {
+  const resp = await fetch(endpoint);
   verificaciones = await resp.json();
   listaVerificaciones.innerHTML = '';
   for (const [codigo, nombre] of Object.entries(verificaciones)) {
@@ -378,7 +397,7 @@ btnIniciar.addEventListener('click', async () => {
     nombreRevision = datos.nombre_lote;
     archivo = datos.archivo;
     await cargarMisRevisiones();
-  } else {
+  } else if (fuenteActiva === 'excel') {
     const nombreRevisionNueva = nombreRevisionExcelInput.value.trim();
     const archivoExcel = archivoExcelInput.files[0];
     if (!nombreRevisionNueva || !archivoExcel) {
@@ -399,6 +418,26 @@ btnIniciar.addEventListener('click', async () => {
     nombreRevision = datos.nombre_lote;
     archivo = datos.archivo;
     await cargarMisRevisiones();
+  } else {
+    const nombreRevisionNueva = nombreRevisionJuridicasInput.value.trim();
+    const archivoJuridicas = archivoJuridicasInput.files[0];
+    if (!nombreRevisionNueva || !archivoJuridicas) {
+      agregarLinea('ERROR: ponle un nombre a la revisión y sube el Excel de personas jurídicas.');
+      return;
+    }
+    btnIniciar.disabled = true;
+    const formulario = new FormData();
+    formulario.append('nombre_lote', nombreRevisionNueva);
+    formulario.append('excel', archivoJuridicas);
+    const resp = await fetch('/api/subir-excel-juridicas-directo', { method: 'POST', body: formulario });
+    const datos = await resp.json();
+    if (datos.error) {
+      agregarLinea(`ERROR: ${datos.error}`);
+      btnIniciar.disabled = false;
+      return;
+    }
+    nombreRevision = datos.nombre_lote;
+    archivo = datos.archivo;
   }
 
   cancelado = false;

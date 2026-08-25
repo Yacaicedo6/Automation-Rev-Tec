@@ -141,6 +141,14 @@ VERIFICACIONES = {
     "dsex": ("Delitos sexuales - inhabilidad", "automation_DelitosSexuales.py"),
 }
 
+# Solo estas dos entidades ofrecen consulta por NIT (persona jurídica) --
+# RNMC, Judicial y Delitos Sexuales son específicamente sobre antecedentes
+# de personas naturales y no aplican aquí.
+VERIFICACIONES_JURIDICAS = {
+    "contjur": ("Contraloría (personas jurídicas) - antecedentes fiscales", "automation_Contraloria_Juridica.py"),
+    "procjur": ("Procuraduría (personas jurídicas) - antecedentes disciplinarios", "automation_Procuraduria_Juridica.py"),
+}
+
 # Prefijo corto para el .txt de log de cada verificación, igual al que usan
 # los automation_*.py para sus carpetas Cert_XXX.
 CODIGOS_ARCHIVO_LOG = {
@@ -149,6 +157,8 @@ CODIGOS_ARCHIVO_LOG = {
     "procuraduria": "PROC",
     "judicial": "JUD",
     "dsex": "DSEX",
+    "contjur": "CONTJUR",
+    "procjur": "PROCJUR",
 }
 
 app = FastAPI(title="Panel de revisión técnico-administrativa")
@@ -640,6 +650,14 @@ def listar_verificaciones(request: Request):
     return {codigo: nombre for codigo, (nombre, _) in VERIFICACIONES.items()}
 
 
+@app.get("/api/verificaciones-juridicas")
+def listar_verificaciones_juridicas(request: Request):
+    _, error = _api_o_401(request)
+    if error:
+        return error
+    return {codigo: nombre for codigo, (nombre, _) in VERIFICACIONES_JURIDICAS.items()}
+
+
 @app.get("/api/mis-lotes")
 def listar_mis_lotes(request: Request):
     usuario, error = _api_o_401(request)
@@ -871,7 +889,7 @@ def admin_eliminar_revision(request: Request, datos: dict = Body(...)):
 # El Excel de postulantes lo sube la misma persona (o un compañero): ya lo
 # tiene en su equipo, así que no tiene sentido ofrecerlo de nuevo entre los
 # resultados descargables -- ahí lo que sirve es el reporte de fallidos.
-ARCHIVOS_ENTRADA_OCULTOS = {"POSTULANTES.xlsx", "POSTULANTES.xls"}
+ARCHIVOS_ENTRADA_OCULTOS = {"POSTULANTES.xlsx", "POSTULANTES.xls", "JURIDICAS.xlsx", "JURIDICAS.xls"}
 
 ENTIDADES = [
     ("RNMC", "RNMC"),
@@ -1184,6 +1202,30 @@ async def subir_excel_directo(request: Request, nombre_lote: str = Form(...), ex
     return {"nombre_lote": carpeta_lote.name, "archivo": ruta_excel.name}
 
 
+@app.post("/api/subir-excel-juridicas-directo")
+async def subir_excel_juridicas_directo(request: Request, nombre_lote: str = Form(...), excel: UploadFile = File(...)):
+    """Igual que /api/subir-excel-directo, pero para el Excel de personas
+    jurídicas (Código, Razón Social, Tipo de identificación, NIT) -- se
+    guarda con un nombre distinto (JURIDICAS, no POSTULANTES) para que no se
+    confunda con una revisión de personas naturales."""
+    usuario, error = _api_o_401(request)
+    if error:
+        return error
+
+    carpeta_lote = _carpeta_lote(usuario, nombre_lote, crear=True)
+    if carpeta_lote is None:
+        return JSONResponse({"error": "El nombre de la revisión no puede estar vacío."}, status_code=400)
+
+    extension = Path(excel.filename or "").suffix.lower()
+    if extension not in (".xlsx", ".xls"):
+        return JSONResponse({"error": "Debe ser un archivo de Excel (.xlsx o .xls)."}, status_code=400)
+
+    ruta_excel = carpeta_lote / f"JURIDICAS{extension}"
+    ruta_excel.write_bytes(await excel.read())
+
+    return {"nombre_lote": carpeta_lote.name, "archivo": ruta_excel.name}
+
+
 @app.post("/api/guardar-csv")
 def guardar_csv(request: Request, datos: dict = Body(...)):
     usuario, error = _api_o_401(request)
@@ -1300,7 +1342,8 @@ async def ejecutar_verificacion(websocket: WebSocket):
         nombre_lote = (datos.get("nombre_lote") or "").strip()
         archivo = (datos.get("archivo") or "").strip()
 
-        if codigo not in VERIFICACIONES:
+        verificacion_encontrada = VERIFICACIONES.get(codigo) or VERIFICACIONES_JURIDICAS.get(codigo)
+        if verificacion_encontrada is None:
             await websocket.send_json({"tipo": "log", "texto": f"ERROR: verificación desconocida '{codigo}'"})
             return
 
@@ -1316,7 +1359,7 @@ async def ejecutar_verificacion(websocket: WebSocket):
         slot = await cupos.tomar(avisar_posicion)
         await websocket.send_json({"tipo": "cupo", "puerto_vnc": cupos.puerto_vnc(slot)})
 
-        nombre_verificacion, script = VERIFICACIONES[codigo]
+        nombre_verificacion, script = verificacion_encontrada
         ruta_script = DIRECTORIO_SCRIPTS / script
         marca_inicio = datetime.now()
 

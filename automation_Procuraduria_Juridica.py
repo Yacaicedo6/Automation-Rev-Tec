@@ -11,32 +11,28 @@ import shutil
 import unicodedata
 import re
 import PyPDF2
-import pymupdf
 
+# Misma frase que usa el portal de Procuraduría para persona natural --
+# confirmada contra un certificado real de persona jurídica (ver
+# conversación del 2026-08-25): "NO REGISTRA SANCIONES NI INHABILIDADES
+# VIGENTES" aparece igual para NIT que para cédula.
 FRASE_LIMPIA = "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES"
 
-# Patrón de la frase de autorización que trae cada persona en el PDF de
-# "Autorización para consulta de antecedentes" (usado cuando no hay Excel).
-PATRON_AUTORIZACION_PDF = re.compile(
-    r"(?:El|La)\s+(?:\((?:la|el)\)\s+)?suscrit[oa]\s*(?:\(\s*[ao]\s*\))?\s+(?P<nombre>.+?)\s*,?\s+"
-    r"identificad[oa]\s*(?:\(\s*a\s*\))?\s+con\s+"
-    r"(?P<tipo_doc>c[eé]dula de ciudadan[ií]a|tarjeta de identidad|c[eé]dula de extranjer[ií]a|pasaporte)\s+No\.\s+"
-    r"(?P<doc>[\d.]+)\s*,?\s+expedida en\s+.+?\s*,?\s+con fecha de expedici[oó]n\s+"
-    r"(?P<fecha>\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4})",
-    re.IGNORECASE,
-)
 
 # ==========================================
-# 0. FUNCIONES PYTHONICAS DE APOYO
+# 0. FUNCIONES DE APOYO
 # ==========================================
-def resolver_pregunta_procuraduria(pregunta_texto, num_doc, p_nombre):
+def resolver_pregunta_procuraduria(pregunta_texto, nit, razon_social):
     """
-    Evalúa la pregunta dinámica, detecta el tipo y retorna la respuesta exacta.
+    Evalúa la pregunta dinámica de seguridad del portal y retorna la
+    respuesta exacta. Es la misma lógica que para persona natural -- las
+    preguntas matemáticas, de dígitos del documento y de geografía no
+    dependen de si es una persona o una empresa; solo la variante "primer
+    nombre" usa razon_social como mejor aproximación disponible.
     """
     p = unicodedata.normalize('NFKD', pregunta_texto).encode('ASCII', 'ignore').decode('utf-8').lower()
     p = p.replace("vallle", "valle")
 
-    # 1. Lógica Matemática (Suma, Resta y Multiplicación)
     match_math = re.search(r'(\d+)\s*([\+\-xX\*])\s*(\d+)', p)
     if match_math:
         num1 = int(match_math.group(1))
@@ -47,20 +43,19 @@ def resolver_pregunta_procuraduria(pregunta_texto, num_doc, p_nombre):
         elif operador == '-': return str(num1 - num2)
         elif operador in ['x', '*']: return str(num1 * num2)
 
-    # 2. Lógica de Datos Personales
     if "primer nombre" in p:
+        primer_token = razon_social.split()[0] if razon_social and razon_social.split() else ""
         if "cantidad de letras" in p:
-            return str(len(str(p_nombre).strip()))
+            return str(len(primer_token))
         elif "dos primeras letras" in p or "2 primeras letras" in p:
-            return str(p_nombre)[:2].lower() if p_nombre else ""
+            return primer_token[:2].lower() if primer_token else ""
         else:
-            return str(p_nombre).lower()
+            return primer_token.lower()
 
-    if "tres primeros" in p or "3 primeros" in p: return str(num_doc)[:3]
-    if "dos ultimos" in p or "2 ultimos" in p: return str(num_doc)[-2:]
-    if "tres ultimos" in p or "3 ultimos" in p: return str(num_doc)[-3:]
+    if "tres primeros" in p or "3 primeros" in p: return str(nit)[:3]
+    if "dos ultimos" in p or "2 ultimos" in p: return str(nit)[-2:]
+    if "tres ultimos" in p or "3 ultimos" in p: return str(nit)[-3:]
 
-    # 3. Lógica de Geografía
     capitales = {
         "antioquia": "medellin", "cundinamarca": "bogota", "colombia": "bogota",
         "valle del cauca": "cali", "atlantico": "barranquilla", "bolivar": "cartagena",
@@ -78,6 +73,7 @@ def resolver_pregunta_procuraduria(pregunta_texto, num_doc, p_nombre):
             return capital
 
     return ""
+
 
 def esperar_y_renombrar_descarga(carpeta_destino, nombre_final, timeout=30):
     """
@@ -110,6 +106,7 @@ def esperar_y_renombrar_descarga(carpeta_destino, nombre_final, timeout=30):
 
     return False
 
+
 def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     """
     Lee los PDF ya descargados. Si no contienen la frase de resultado limpio,
@@ -124,32 +121,30 @@ def auditar_descargas_anteriores(carpeta_origen, carpeta_alertas):
     for archivo in os.listdir(carpeta_origen):
         if archivo.endswith('.pdf'):
             ruta_pdf = os.path.join(carpeta_origen, archivo)
-
             try:
                 with open(ruta_pdf, 'rb') as f:
                     lector = PyPDF2.PdfReader(f)
                     texto_pdf = ""
                     for pagina in lector.pages:
                         texto_pdf += pagina.extract_text() or ""
-
                 texto_limpio = "".join(texto_pdf.upper().split())
-
                 if frase_normalizada not in texto_limpio:
                     os.makedirs(carpeta_alertas, exist_ok=True)
                     ruta_nueva = os.path.join(carpeta_alertas, archivo)
                     shutil.move(ruta_pdf, ruta_nueva)
                     alertas_encontradas.append(archivo.replace(".pdf", ""))
-
             except Exception as e:
                 print(f"No se pudo auditar el archivo {archivo}: {e}")
 
     return alertas_encontradas
 
-def circuito_abierto(fallos_consecutivos, nombre_entidad="la Procuraduría"):
+
+def circuito_abierto(fallos_consecutivos, nombre_entidad="la Procuraduría (personas jurídicas)"):
     """
-    Si el portal falla dos veces seguidas por algo técnico (no por un dato puntual
-    de la persona), lo más probable es un bloqueo de IP o una caída temporal.
-    Seguir intentando con el resto solo perdería tiempo, así que se corta aquí.
+    Si el mismo portal falla dos veces seguidas (no por un dato puntual,
+    sino por algo técnico), lo más probable es un bloqueo de IP o una caída
+    temporal. Seguir intentando con el resto solo perdería tiempo, así que
+    se corta la verificación aquí.
     """
     if fallos_consecutivos >= 2:
         print(f"\nSe detectaron {fallos_consecutivos} fallos técnicos consecutivos en el portal de {nombre_entidad}.")
@@ -158,8 +153,24 @@ def circuito_abierto(fallos_consecutivos, nombre_entidad="la Procuraduría"):
         return True
     return False
 
+
+def _pedir_respuesta_manual(mensaje):
+    """
+    Pide una respuesta escrita a mano -- pero solo si hay una consola real
+    detrás. Si no hay una terminal interactiva (como cuando el panel web
+    lanza este script como subproceso), no hay quien la escriba: en vez de
+    colgarse esperando una entrada que nunca llega, se devuelve None de una
+    vez para que la empresa quede marcada como fallida y se pueda reintentar
+    luego.
+    """
+    if not sys.stdin.isatty():
+        return None
+    return input(mensaje)
+
+
 def _quitar_acentos(texto):
     return texto.translate(str.maketrans("ÁÉÍÓÚáéíóúÑñ", "AEIOUaeiouNn"))
+
 
 def _columna_que_contiene(columnas, *fragmentos):
     for columna in columnas:
@@ -168,150 +179,52 @@ def _columna_que_contiene(columnas, *fragmentos):
             return columna
     return None
 
-def _leer_personas_desde_excel_simple(ruta_excel):
+
+def leer_juridicas(ruta_excel):
     """
-    Lee la plantilla simple de postulantes (Código, Nombre Completo, Número
-    de Identificación, Fecha de expedición y, si la trae, Tipo de
-    documento), usada desde la convocatoria del Mundial de Salsa en
-    adelante. Si el archivo no tiene estas columnas -por ejemplo, es la
-    plantilla larga "ANEXO TÉCNICO" de antes- devuelve None para que se
-    intente con leer_personas_excel_legado.
+    Lee el Excel de personas jurídicas postuladas: Código, Razón Social,
+    Tipo de identificación, Número de Identificación Tributaria (NIT).
     """
     try:
         encabezados = pd.read_excel(ruta_excel, sheet_name=0, header=0, nrows=0)
     except Exception:
-        return None
+        return pd.DataFrame()
     encabezados.columns = encabezados.columns.str.strip()
     columnas = list(encabezados.columns)
 
     col_codigo = _columna_que_contiene(columnas, "CODIGO")
-    col_tipo_doc = _columna_que_contiene(columnas, "TIPO")
-    col_nombre = _columna_que_contiene(columnas, "NOMBRE")
-    # "Tipo de identificación" y "Número de identificación" comparten la
-    # palabra "identificación", así que primero se busca la combinación
-    # "número" + "identificación" y solo si no aparece se cae a una
-    # búsqueda más laxa, siempre excluyendo la columna ya usada como tipo.
-    columnas_sin_tipo = [c for c in columnas if c != col_tipo_doc]
-    col_doc = (
-        _columna_que_contiene(columnas_sin_tipo, "NUMERO", "IDENTIFICACION")
-        or _columna_que_contiene(columnas_sin_tipo, "IDENTIFICACION")
-        or _columna_que_contiene(columnas_sin_tipo, "DOCUMENTO")
+    col_razon = _columna_que_contiene(columnas, "RAZON")
+    col_tipo = _columna_que_contiene(columnas, "TIPO")
+    col_nit = (
+        _columna_que_contiene(columnas, "NIT")
+        or _columna_que_contiene(columnas, "IDENTIFICACION", "TRIBUTARIA")
+        or _columna_que_contiene(columnas, "NUMERO", "IDENTIFICACION")
     )
-    col_fecha = _columna_que_contiene(columnas, "FECHA")
 
-    if not (col_codigo and col_nombre and col_doc and col_fecha):
-        return None
+    if not (col_codigo and col_razon and col_nit):
+        return pd.DataFrame()
 
     try:
-        # El código y el número de documento se leen como texto para no
-        # perder ceros a la izquierda (Excel los tomaría como número).
-        df = pd.read_excel(ruta_excel, sheet_name=0, header=0, dtype={col_codigo: str, col_doc: str})
+        df = pd.read_excel(ruta_excel, sheet_name=0, header=0, dtype={col_codigo: str, col_nit: str})
     except Exception:
-        return None
+        return pd.DataFrame()
     df.columns = df.columns.str.strip()
-    df = df.dropna(subset=[col_doc])
+    df = df.dropna(subset=[col_nit])
 
     filas = []
     for _, fila in df.iterrows():
-        nombre_completo = str(fila[col_nombre]).strip() if pd.notna(fila[col_nombre]) else ""
-        tokens = nombre_completo.split()
-        primer_nombre = tokens[0] if tokens else ""
-        resto_nombre = " ".join(tokens[1:])
-
-        try:
-            fecha_valor = pd.to_datetime(fila[col_fecha], dayfirst=True)
-        except Exception:
-            fecha_valor = fila[col_fecha]
-
+        nit = re.sub(r"\D", "", str(fila[col_nit])) if pd.notna(fila[col_nit]) else ""
+        if not nit:
+            continue
         filas.append({
             'CODIGO': str(fila[col_codigo]).strip() if pd.notna(fila[col_codigo]) else "",
-            '# DOC. IDENTIDAD': str(fila[col_doc]).strip(),
-            'TIPO DOCUMENTO \n(RC - TI - PP)': str(fila[col_tipo_doc]).strip() if col_tipo_doc and pd.notna(fila[col_tipo_doc]) else 'CC',
-            'PRIMER NOMBRE': primer_nombre,
-            'SEGUNDO NOMBRE': "",
-            'PRIMER APELLIDO': resto_nombre,
-            'SEGUNDO APELLIDO': "",
-            'FECHA DE EXPEDICION (DD/MM/AA)': fecha_valor,
+            'RAZON SOCIAL': str(fila[col_razon]).strip() if pd.notna(fila[col_razon]) else "",
+            'TIPO DE IDENTIFICACION': str(fila[col_tipo]).strip() if col_tipo and pd.notna(fila[col_tipo]) else 'NIT',
+            'NIT': nit,
         })
 
     resultado = pd.DataFrame(filas)
-    return resultado.drop_duplicates(subset=['# DOC. IDENTIDAD']) if not resultado.empty else resultado
-
-def leer_personas_excel_legado(ruta_excel):
-    """
-    Lee todas las hojas del libro y combina las filas con un documento de
-    identidad válido. Algunas plantillas separan a las personas en varias
-    hojas (por ejemplo BAILARINES / MUSICOS), así que no basta con leer
-    solo la primera.
-    """
-    libro = pd.ExcelFile(ruta_excel)
-    hojas_validas = []
-
-    for nombre_hoja in libro.sheet_names:
-        try:
-            df_hoja = pd.read_excel(ruta_excel, sheet_name=nombre_hoja, header=28)
-            df_hoja.columns = df_hoja.columns.str.strip()
-
-            # Algunas hojas nombran esta columna sin el sufijo "(DD/MM/AA)"; se
-            # normaliza para que no queden como dos columnas distintas al combinar.
-            for columna in list(df_hoja.columns):
-                if columna.startswith('FECHA DE EXPEDICION') and columna != 'FECHA DE EXPEDICION (DD/MM/AA)':
-                    df_hoja = df_hoja.rename(columns={columna: 'FECHA DE EXPEDICION (DD/MM/AA)'})
-
-            if '# DOC. IDENTIDAD' not in df_hoja.columns:
-                continue
-            df_hoja = df_hoja.dropna(subset=['# DOC. IDENTIDAD'])
-            if not df_hoja.empty:
-                hojas_validas.append(df_hoja)
-        except Exception:
-            continue
-
-    if not hojas_validas:
-        return pd.DataFrame()
-
-    combinado = pd.concat(hojas_validas, ignore_index=True)
-
-    # Si la misma persona aparece varias veces (distintos roles o secciones),
-    # nos quedamos con la fila más completa (menos datos vacíos), no con la
-    # primera que aparezca, que puede estar incompleta.
-    combinado['_completitud'] = combinado.notna().sum(axis=1)
-    combinado = combinado.sort_values('_completitud', ascending=False)
-    combinado = combinado.drop_duplicates(subset=['# DOC. IDENTIDAD'], keep='first')
-    return combinado.drop(columns=['_completitud'])
-
-def leer_personas(ruta_excel):
-    """
-    Lee el Excel de postulantes: primero intenta la plantilla simple
-    (Código, Nombre Completo, Número de Identificación, Fecha de
-    expedición); si no calza con esas columnas, cae a la plantilla larga
-    "ANEXO TÉCNICO" de convocatorias anteriores.
-    """
-    df_simple = _leer_personas_desde_excel_simple(ruta_excel)
-    if df_simple is not None and not df_simple.empty:
-        return df_simple
-    return leer_personas_excel_legado(ruta_excel)
-
-
-def _mapear_tipo_documento_procuraduria(tipo_doc_crudo):
-    """
-    Traduce el valor crudo de la columna "TIPO DOCUMENTO" del Excel al value
-    real del <select> ddlTipoID del portal de Procuraduría. Este portal NO
-    ofrece Tarjeta de Identidad ni Pasaporte como opciones (confirmado en el
-    HTML real del formulario), así que esos casos quedan sin mapear a
-    propósito. Devuelve None si no reconoce el tipo, para que quien llama
-    decida saltar a esa persona en vez de adivinar (antes se asumía Cédula
-    de Ciudadanía por defecto).
-    """
-    valor = tipo_doc_crudo.upper()
-    if valor == "CC" or "CIUDADAN" in valor:
-        return "1"
-    if valor == "PEP" or "PERMISO ESPECIAL" in valor:
-        return "0"
-    if valor == "PPT" or ("PERMISO" in valor and "TEMPORAL" in valor):
-        return "10"
-    if valor in ("CE", "CX") or "EXTRANJER" in valor:
-        return "5"
-    return None
+    return resultado.drop_duplicates(subset=['NIT']) if not resultado.empty else resultado
 
 
 def _pitido(frecuencia, duracion_ms):
@@ -328,27 +241,11 @@ def _pitido(frecuencia, duracion_ms):
         pass
 
 
-def _pedir_respuesta_manual(mensaje):
-    """
-    Pide una respuesta escrita a mano -- pero solo si hay una consola real
-    detrás (por ejemplo, corriendo el script directo con doble clic). Si no
-    hay una terminal interactiva (como cuando el panel web lanza este
-    script como subproceso), no hay quien la escriba: en vez de colgarse
-    esperando una entrada que nunca llega, se devuelve None de una vez para
-    que la persona quede marcada como fallida y se pueda reintentar luego.
-    """
-    if not sys.stdin.isatty():
-        return None
-    return input(mensaje)
-
-
 def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_entidad):
     """
-    Junta a quienes NO se pudieron consultar de verdad (dato rechazado por
-    el portal, tiempo de espera agotado, error inesperado) y los deja en un
-    Excel aparte (Fallidos_<ENTIDAD>.xlsx), para que sea fácil ver a quién
-    hay que volver a intentarle sin mezclarlos con la gente que sí tuvo una
-    alerta real.
+    Junta a las empresas que NO se pudieron consultar de verdad y las deja
+    en un Excel aparte (Fallidos_<ENTIDAD>.xlsx), para reintentarlas sin
+    mezclarlas con las que sí tuvieron una alerta real.
     """
     ruta_fallidos = os.path.join(directorio_base, f"Fallidos_{codigo_entidad}.xlsx")
 
@@ -359,40 +256,28 @@ def _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, codigo_e
 
     filas_fallidos = []
     for _, fila_persona in df.iterrows():
-        doc_persona = str(fila_persona['# DOC. IDENTIDAD']).strip()
-        if doc_persona.endswith('.0'):
-            doc_persona = doc_persona[:-2]
-        if doc_persona not in documentos_fallidos:
+        nit_persona = str(fila_persona['NIT']).strip()
+        if nit_persona not in documentos_fallidos:
             continue
-
-        p_nombre_f = str(fila_persona['PRIMER NOMBRE']) if pd.notna(fila_persona['PRIMER NOMBRE']) else ""
-        s_nombre_f = str(fila_persona['SEGUNDO NOMBRE']) if pd.notna(fila_persona['SEGUNDO NOMBRE']) else ""
-        p_apellido_f = str(fila_persona['PRIMER APELLIDO']) if pd.notna(fila_persona['PRIMER APELLIDO']) else ""
-        s_apellido_f = str(fila_persona['SEGUNDO APELLIDO']) if pd.notna(fila_persona['SEGUNDO APELLIDO']) else ""
-        nombre_completo_f = f"{p_nombre_f} {s_nombre_f} {p_apellido_f} {s_apellido_f}".replace("  ", " ").strip()
-
         filas_fallidos.append({
-            "CODIGO": fila_persona.get('CODIGO', '') if 'CODIGO' in df.columns else "",
-            "NOMBRE": nombre_completo_f,
-            "DOCUMENTO": doc_persona,
-            "MOTIVO": documentos_fallidos[doc_persona],
+            "CODIGO": fila_persona.get('CODIGO', ''),
+            "RAZON_SOCIAL": fila_persona.get('RAZON SOCIAL', ''),
+            "NIT": nit_persona,
+            "MOTIVO": documentos_fallidos[nit_persona],
         })
 
     try:
         pd.DataFrame(filas_fallidos).to_excel(ruta_fallidos, index=False)
-        print(f"\nSe guardó el listado de personas con consulta fallida en:\n{ruta_fallidos}")
+        print(f"\nSe guardó el listado de personas jurídicas con consulta fallida en:\n{ruta_fallidos}")
     except Exception as error_reporte:
         print(f"Aviso: no se pudo generar el Excel de fallidos: {error_reporte}")
 
 
 def _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, codigo_entidad):
     """
-    Junta a TODAS las personas con alerta real guardada en la carpeta de
+    Junta a TODAS las empresas con alerta real guardada en la carpeta de
     inhabilitados -de esta corrida o de corridas anteriores- en un Excel
-    aparte (Inhabilitados_<ENTIDAD>.xlsx). El motivo de esta corrida ya
-    viene capturado en vivo (documentos_inhabilitados); el de corridas
-    anteriores se lee directo del PDF ya guardado, para no dejar por fuera
-    a quien ya se había consultado antes de que existiera este reporte.
+    aparte (Inhabilitados_<ENTIDAD>.xlsx).
     """
     carpeta_inhabilitados_dir = os.path.join(directorio_base, f"Cert_{codigo_entidad}_INHABILITADOS")
     ruta_inhabilitados = os.path.join(directorio_base, f"Inhabilitados_{codigo_entidad}.xlsx")
@@ -405,7 +290,7 @@ def _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base
                 continue
             doc_archivo = os.path.splitext(nombre_archivo)[0].rsplit('_', 1)[-1]
             if doc_archivo in motivos_por_doc:
-                continue  # ya se tiene el motivo capturado en vivo de esta corrida
+                continue
             ruta_pdf_existente = os.path.join(carpeta_inhabilitados_dir, nombre_archivo)
             try:
                 with open(ruta_pdf_existente, 'rb') as f:
@@ -424,94 +309,22 @@ def _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base
 
     filas_inhabilitados = []
     for _, fila_persona in df.iterrows():
-        doc_persona = str(fila_persona['# DOC. IDENTIDAD']).strip()
-        if doc_persona.endswith('.0'):
-            doc_persona = doc_persona[:-2]
-        if doc_persona not in motivos_por_doc:
+        nit_persona = str(fila_persona['NIT']).strip()
+        if nit_persona not in motivos_por_doc:
             continue
-
-        p_nombre_i = str(fila_persona['PRIMER NOMBRE']) if pd.notna(fila_persona['PRIMER NOMBRE']) else ""
-        s_nombre_i = str(fila_persona['SEGUNDO NOMBRE']) if pd.notna(fila_persona['SEGUNDO NOMBRE']) else ""
-        p_apellido_i = str(fila_persona['PRIMER APELLIDO']) if pd.notna(fila_persona['PRIMER APELLIDO']) else ""
-        s_apellido_i = str(fila_persona['SEGUNDO APELLIDO']) if pd.notna(fila_persona['SEGUNDO APELLIDO']) else ""
-        nombre_completo_i = f"{p_nombre_i} {s_nombre_i} {p_apellido_i} {s_apellido_i}".replace("  ", " ").strip()
-        tipo_doc_i = str(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']).strip() if pd.notna(fila_persona['TIPO DOCUMENTO \n(RC - TI - PP)']) else ""
-
         filas_inhabilitados.append({
-            "CODIGO": fila_persona.get('CODIGO', '') if 'CODIGO' in df.columns else "",
-            "NOMBRE": nombre_completo_i,
-            "TIPO_DOCUMENTO": tipo_doc_i,
-            "DOCUMENTO": doc_persona,
-            "MOTIVO": motivos_por_doc[doc_persona],
+            "CODIGO": fila_persona.get('CODIGO', ''),
+            "RAZON_SOCIAL": fila_persona.get('RAZON SOCIAL', ''),
+            "NIT": nit_persona,
+            "MOTIVO": motivos_por_doc[nit_persona],
         })
 
     try:
         pd.DataFrame(filas_inhabilitados).to_excel(ruta_inhabilitados, index=False)
-        print(f"\nSe guardó el listado de personas con alerta real en:\n{ruta_inhabilitados}")
+        print(f"\nSe guardó el listado de personas jurídicas con alerta real en:\n{ruta_inhabilitados}")
     except Exception as error_reporte:
         print(f"Aviso: no se pudo generar el Excel de inhabilitados: {error_reporte}")
 
-def leer_personas_desde_pdf(ruta_pdf):
-    """
-    Extrae a las personas directamente del PDF de "Autorización para consulta
-    de antecedentes" (una autorización por persona, dentro del mismo archivo),
-    para las convocatorias que ya no traen un Excel de postulantes.
-    """
-    documento = pymupdf.open(ruta_pdf)
-    texto_completo = ""
-    for pagina in documento:
-        texto_completo += pagina.get_text() + " "
-
-    texto_normalizado = " ".join(texto_completo.replace("_", "").replace(chr(0x200b), " ").split())
-
-    filas = []
-    for coincidencia in PATRON_AUTORIZACION_PDF.finditer(texto_normalizado):
-        nombre_completo = " ".join(coincidencia.group("nombre").split())
-        tokens = nombre_completo.split()
-        primer_nombre = tokens[0] if tokens else ""
-        resto_nombre = " ".join(tokens[1:])
-
-        tipo_doc_texto = coincidencia.group("tipo_doc").lower()
-        if "extranjer" in tipo_doc_texto:
-            tipo_doc = "CE"
-        elif "tarjeta" in tipo_doc_texto:
-            tipo_doc = "TI"
-        elif "pasaporte" in tipo_doc_texto:
-            tipo_doc = "PA"
-        else:
-            tipo_doc = "CC"
-
-        filas.append({
-            '# DOC. IDENTIDAD': re.sub(r"\D", "", coincidencia.group("doc")),
-            'TIPO DOCUMENTO \n(RC - TI - PP)': tipo_doc,
-            'PRIMER NOMBRE': primer_nombre,
-            'SEGUNDO NOMBRE': "",
-            'PRIMER APELLIDO': resto_nombre,
-            'SEGUNDO APELLIDO': "",
-            # dayfirst=True porque el PDF trae las fechas en formato DD/MM/AAAA
-            'FECHA DE EXPEDICION (DD/MM/AA)': pd.to_datetime(re.sub(r"\s+", "", coincidencia.group("fecha")), dayfirst=True),
-        })
-
-    df = pd.DataFrame(filas)
-    return df.drop_duplicates(subset=['# DOC. IDENTIDAD']) if not df.empty else df
-
-def leer_personas_desde_csv(ruta_csv):
-    """
-    Lee el CSV que genera preparar_personas.py (columnas DOC, TIPO_DOC,
-    PRIMER_NOMBRE, SEGUNDO_NOMBRE, PRIMER_APELLIDO, SEGUNDO_APELLIDO,
-    FECHA_EXPEDICION) y lo traduce a los nombres de columna que usa el resto
-    del script.
-    """
-    df = pd.read_csv(ruta_csv, dtype={'DOC': str})
-    return pd.DataFrame({
-        '# DOC. IDENTIDAD': df['DOC'],
-        'TIPO DOCUMENTO \n(RC - TI - PP)': df['TIPO_DOC'],
-        'PRIMER NOMBRE': df['PRIMER_NOMBRE'],
-        'SEGUNDO NOMBRE': df.get('SEGUNDO_NOMBRE', ""),
-        'PRIMER APELLIDO': df['PRIMER_APELLIDO'],
-        'SEGUNDO APELLIDO': df.get('SEGUNDO_APELLIDO', ""),
-        'FECHA DE EXPEDICION (DD/MM/AA)': pd.to_datetime(df['FECHA_EXPEDICION'], dayfirst=True),
-    })
 
 # ==========================================
 # 1. CONFIGURACIÓN Y RUTAS
@@ -519,25 +332,17 @@ def leer_personas_desde_csv(ruta_csv):
 def obtener_ruta_datos():
     if len(sys.argv) > 1:
         return sys.argv[1]
-    return input("Ruta del archivo (Excel, PDF o CSV ya preparado) con la información de los postulantes: ").strip('"').strip()
+    return input("Ruta del Excel con las personas jurídicas (Código, Razón Social, Tipo de identificación, NIT): ").strip('"').strip()
+
 
 ruta_datos = obtener_ruta_datos()
 if not os.path.isfile(ruta_datos):
     raise FileNotFoundError(f"No se encontró el archivo: {ruta_datos}")
 
 directorio_base = os.path.normpath(os.path.dirname(ruta_datos))
-carpeta_destino = os.path.join(directorio_base, "Cert_PROC")
-carpeta_inhabilitados = os.path.join(directorio_base, "Cert_PROC_INHABILITADOS")
-# carpeta_destino sí se crea de una vez porque Chrome la necesita lista como
-# carpeta de descargas antes de abrir el navegador. carpeta_inhabilitados se
-# deja para crearse solo si de verdad aparece una alerta.
+carpeta_destino = os.path.join(directorio_base, "Cert_PROCJUR")
+carpeta_inhabilitados = os.path.join(directorio_base, "Cert_PROCJUR_INHABILITADOS")
 os.makedirs(carpeta_destino, exist_ok=True)
-
-# Carpetas con el nombre largo que usaban las corridas anteriores a este cambio.
-# Se siguen revisando para no volver a descargar (y perder tiempo) lo que ya
-# quedó guardado ahí.
-carpeta_destino_vieja = os.path.join(directorio_base, "Certificados_Procuraduria")
-carpeta_inhabilitados_vieja = os.path.join(directorio_base, "Certificados_Procuraduria_INHABILITADOS")
 
 print("Auditando certificados previamente descargados...")
 alertas_historicas = auditar_descargas_anteriores(carpeta_destino, carpeta_inhabilitados)
@@ -546,21 +351,16 @@ if alertas_historicas:
 
 print(f"Los PDF se guardarán y renombrarán automáticamente en:\n{carpeta_destino}")
 
-print("\nLeyendo el archivo de postulantes...")
-if ruta_datos.lower().endswith('.csv'):
-    df = leer_personas_desde_csv(ruta_datos)
-elif ruta_datos.lower().endswith('.pdf'):
-    df = leer_personas_desde_pdf(ruta_datos)
-else:
-    df = leer_personas(ruta_datos)
+print("\nLeyendo el archivo de personas jurídicas...")
+df = leer_juridicas(ruta_datos)
 if df.empty:
-    print("No se encontró ninguna persona con documento válido en el archivo.")
+    print("No se encontró ninguna persona jurídica con NIT válido en el archivo.")
 
 lista_alertas_finales = alertas_historicas.copy()
-# Documento -> motivo, para el Excel de personas a las que falló la
-# consulta (distinto de una alerta real: aquí no se logró determinar nada).
+# NIT -> motivo, para el Excel de empresas a las que falló la consulta
+# (distinto de una alerta real: aquí no se logró determinar nada).
 documentos_fallidos = {}
-# Documento -> texto del portal, para el Excel de personas con alerta real.
+# NIT -> texto del portal, para el Excel de empresas con alerta real.
 documentos_inhabilitados = {}
 
 # ==========================================
@@ -581,7 +381,7 @@ wait = WebDriverWait(driver, 25)
 # Espera más larga solo para el botón de "Descargar": el propio HTML del
 # portal de la Procuraduría configura su UpdatePanel de ASP.NET con un
 # timeout de 360000ms (6 minutos) -- ellos mismos anticipan que la consulta
-# puede tardar así de lento en días congestionados. 60s se quedaba muy corto.
+# puede tardar así de lento en días congestionados.
 wait_descarga = WebDriverWait(driver, 180)
 
 errores_no_manejados = 0
@@ -590,49 +390,27 @@ total_personas = len(df)
 
 try:
     for contador_persona, (index, row) in enumerate(df.iterrows(), start=1):
-        num_doc = str(row['# DOC. IDENTIDAD']).strip()
-
-        if not num_doc[0].isdigit():
+        nit = str(row['NIT']).strip()
+        if not nit or not nit[0].isdigit():
             continue
-        if num_doc.endswith('.0'):
-            num_doc = num_doc[:-2]
 
-        tipo_doc_crudo = str(row['TIPO DOCUMENTO \n(RC - TI - PP)']).strip()
-        valor_tipo_doc = _mapear_tipo_documento_procuraduria(tipo_doc_crudo)
+        razon_social = str(row['RAZON SOCIAL']).strip() if pd.notna(row['RAZON SOCIAL']) else ""
 
-        p_nombre = str(row['PRIMER NOMBRE']) if pd.notna(row['PRIMER NOMBRE']) else ""
-        s_nombre = str(row['SEGUNDO NOMBRE']) if pd.notna(row['SEGUNDO NOMBRE']) else ""
-        p_apellido = str(row['PRIMER APELLIDO']) if pd.notna(row['PRIMER APELLIDO']) else ""
-        s_apellido = str(row['SEGUNDO APELLIDO']) if pd.notna(row['SEGUNDO APELLIDO']) else ""
-        nombre_completo = f"{p_nombre} {s_nombre} {p_apellido} {s_apellido}".replace("  ", " ").strip()
-
-        print(f"\n[{contador_persona}/{total_personas}] {nombre_completo} ({num_doc})")
+        print(f"\n[{contador_persona}/{total_personas}] {razon_social} (NIT {nit})")
 
         # ==========================================
         # 3. VALIDACIÓN PREVIA (LOOK BEFORE YOU LEAP)
         # ==========================================
-        # Nombre y carpeta cortos para no exceder el límite de ruta de Windows.
-        # También se reconocen la carpeta y el nombre largos de antes de este
-        # cambio, para no volver a descargar lo que ya se había guardado ahí.
-        primer_nombre_archivo = "".join(c for c in p_nombre.strip() if c.isalnum()) or "SN"
-        codigo_val = row.get('CODIGO') if 'CODIGO' in df.columns else None
-        prefijo_archivo = "".join(c for c in str(codigo_val).strip() if c.isalnum()) if pd.notna(codigo_val) and str(codigo_val).strip() else "PROC"
-        nombre_archivo_esperado = f"{prefijo_archivo}_{primer_nombre_archivo}_{num_doc}.pdf"
+        tokens_razon = razon_social.split()
+        primer_token_razon = "".join(c for c in tokens_razon[0] if c.isalnum()) if tokens_razon else "SN"
+        codigo_val = row.get('CODIGO')
+        prefijo_archivo = "".join(c for c in str(codigo_val).strip() if c.isalnum()) if pd.notna(codigo_val) and str(codigo_val).strip() else "PROCJUR"
+        nombre_archivo_esperado = f"{prefijo_archivo}_{primer_token_razon}_{nit}.pdf"
         ruta_esperada_normal = os.path.join(carpeta_destino, nombre_archivo_esperado)
         ruta_esperada_inhab = os.path.join(carpeta_inhabilitados, nombre_archivo_esperado)
 
-        nombre_limpio = "".join(c for c in nombre_completo if c.isalnum() or c in " -_").strip()
-        nombre_archivo_viejo = f"Procuraduria-{nombre_limpio}.pdf"
-        ruta_vieja_normal = os.path.join(carpeta_destino_vieja, nombre_archivo_viejo)
-        ruta_vieja_inhab = os.path.join(carpeta_inhabilitados_vieja, nombre_archivo_viejo)
-
-        if any(os.path.exists(r) for r in (ruta_esperada_normal, ruta_esperada_inhab, ruta_vieja_normal, ruta_vieja_inhab)):
+        if any(os.path.exists(r) for r in (ruta_esperada_normal, ruta_esperada_inhab)):
             print("El certificado ya existe en la carpeta. Se omite la descarga...")
-            continue
-
-        if valor_tipo_doc is None:
-            print(f"Tipo de documento no reconocido: '{tipo_doc_crudo}'. Se salta sin consultar el portal...")
-            documentos_fallidos[num_doc] = f"Tipo de documento no reconocido: {tipo_doc_crudo}"
             continue
 
         try:
@@ -690,10 +468,12 @@ try:
                 continue
 
             selector_tipo_doc = Select(elemento_tipo_doc)
-            selector_tipo_doc.select_by_value(valor_tipo_doc)
+            # value="2" es NIT en este portal (confirmado en el HTML real
+            # del formulario, donde incluso viene preseleccionado).
+            selector_tipo_doc.select_by_value("2")
 
             campo_documento = driver.find_element(By.ID, "txtNumID")
-            campo_documento.send_keys(num_doc)
+            campo_documento.send_keys(nit)
 
             # ==========================================
             # 5. RESOLVER PREGUNTA DE SEGURIDAD
@@ -701,13 +481,13 @@ try:
             label_pregunta = driver.find_element(By.ID, "lblPregunta").text
             print(f"Pregunta detectada: {label_pregunta}")
 
-            respuesta_calculada = resolver_pregunta_procuraduria(label_pregunta, num_doc, p_nombre)
+            respuesta_calculada = resolver_pregunta_procuraduria(label_pregunta, nit, razon_social)
 
             if not respuesta_calculada:
                 _pitido(1000, 500)
                 respuesta_calculada = _pedir_respuesta_manual("Pregunta desconocida. Escribe la respuesta aquí en la consola y presiona Enter: ")
                 if respuesta_calculada is None:
-                    documentos_fallidos[num_doc] = "Pregunta de seguridad desconocida (sin consola interactiva para responderla a mano)"
+                    documentos_fallidos[nit] = "Pregunta de seguridad desconocida (sin consola interactiva para responderla a mano)"
                     errores_no_manejados += 1
                     fallos_consecutivos += 1
                     if circuito_abierto(fallos_consecutivos):
@@ -744,7 +524,7 @@ try:
 
                 if errores_visibles:
                     _pitido(1000, 500)
-                    nueva_respuesta = _pedir_respuesta_manual("Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir persona): ")
+                    nueva_respuesta = _pedir_respuesta_manual("Intento fallido. Ingresa la respuesta correcta (o escribe 'saltar' para omitir empresa): ")
 
                     if nueva_respuesta is None or nueva_respuesta.lower() == 'saltar':
                         break
@@ -757,7 +537,7 @@ try:
                     exito_generacion = True
 
             if not exito_generacion:
-                documentos_fallidos[num_doc] = "No se pudo superar la pregunta de seguridad del portal"
+                documentos_fallidos[nit] = "No se pudo superar la pregunta de seguridad del portal"
                 driver.switch_to.default_content()
                 fallos_consecutivos = 0  # el portal respondió; el problema es de esta respuesta puntual
                 continue
@@ -792,11 +572,11 @@ try:
 
             except Exception as e:
                 print(f"No se detectó el botón de descarga en la segunda pantalla ({e}). Revisando carpeta...")
-                ruta_debug = os.path.join(carpeta_destino, f"DEBUG_{num_doc}.png")
+                ruta_debug = os.path.join(carpeta_destino, f"DEBUG_{nit}.png")
                 try:
                     driver.save_screenshot(ruta_debug)
                     print(f"Captura de diagnóstico guardada en: {ruta_debug}")
-                    with open(os.path.join(carpeta_destino, f"DEBUG_{num_doc}.html"), "w", encoding="utf-8") as f_debug:
+                    with open(os.path.join(carpeta_destino, f"DEBUG_{nit}.html"), "w", encoding="utf-8") as f_debug:
                         f_debug.write(driver.page_source)
                 except Exception:
                     pass
@@ -807,7 +587,7 @@ try:
             driver.switch_to.default_content()
 
             if not descarga_lista:
-                documentos_fallidos[num_doc] = "No se pudo descargar el certificado (tiempo agotado o botón de descarga no encontrado)"
+                documentos_fallidos[nit] = "No se pudo descargar el certificado (tiempo agotado o botón de descarga no encontrado)"
                 errores_no_manejados += 1
                 fallos_consecutivos += 1
                 if circuito_abierto(fallos_consecutivos):
@@ -837,15 +617,15 @@ try:
                 shutil.move(ruta_esperada_normal, ruta_esperada_inhab)
                 print("Atención: se detectó una posible sanción o inhabilidad vigente. Se movió a la carpeta de alertas...")
                 lista_alertas_finales.append(nombre_archivo_esperado.replace(".pdf", ""))
-                documentos_inhabilitados[num_doc] = " ".join(texto_pdf.split())
+                documentos_inhabilitados[nit] = " ".join(texto_pdf.split())
                 _pitido(2000, 1000)
 
             fallos_consecutivos = 0
 
         except Exception as e:
-            print(f"Error inesperado procesando a {nombre_completo} ({num_doc}): {e}")
-            print("Se salta a la siguiente persona...")
-            documentos_fallidos[num_doc] = f"Error inesperado: {e}"
+            print(f"Error inesperado procesando a {razon_social} (NIT {nit}): {e}")
+            print("Se salta a la siguiente empresa...")
+            documentos_fallidos[nit] = f"Error inesperado: {e}"
             errores_no_manejados += 1
             fallos_consecutivos += 1
             driver.switch_to.default_content()
@@ -870,13 +650,13 @@ finally:
     else:
         print("No se encontraron sanciones o inhabilidades vigentes en esta tanda.")
 
-    _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, "PROC")
-    _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, "PROC")
+    _guardar_reporte_fallidos(df, documentos_fallidos, directorio_base, "PROCJUR")
+    _guardar_reporte_inhabilitados(df, documentos_inhabilitados, directorio_base, "PROCJUR")
 
     print("="*50)
     print("Cerrando navegador...")
     driver.quit()
 
 if errores_no_manejados:
-    print(f"\n{errores_no_manejados} persona(s) no se pudieron procesar por errores inesperados. Vuelve a correr este script para reintentarlas (los ya descargados se omiten automáticamente).")
+    print(f"\n{errores_no_manejados} empresa(s) no se pudieron procesar por errores inesperados. Vuelve a correr este script para reintentarlas (los ya descargados se omiten automáticamente).")
     sys.exit(1)
