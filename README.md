@@ -1,29 +1,29 @@
 # Automation-Rev-Tec
 
-Automatiza la descarga de certificados de antecedentes para la revisión técnico-administrativa de convocatorias de estímulos de la Alcaldía de Cali (actualmente en uso para el Ecosistema Musical y Dancístico del Festival Mundial de Salsa 2026).
+Automatiza la descarga de certificados de antecedentes para la revisión técnico-administrativa de convocatorias de estímulos de la Alcaldía de Cali.
 
-Por cada persona listada en el archivo de un postulante (el Excel de anexo técnico, o el PDF de autorización de consulta de antecedentes en convocatorias que ya no usan Excel), el proyecto consulta 5 portales públicos y descarga el certificado correspondiente, clasificando automáticamente los casos que requieren revisión manual.
+El proyecto consulta 5 portales públicos y descarga el certificado correspondiente, clasificando automáticamente los casos que requieren revisión manual.
 
 ## Verificaciones que realiza
 
 | Script | Entidad | Qué consulta | Frase de resultado limpio | Carpeta de salida |
 |---|---|---|---|---|
-| `automation_RNMC.py` | Policía Nacional | Registro Nacional de Medidas Correctivas | "NO TIENE MEDIDAS CORRECTIVAS PENDIENTES POR CUMPLIR" | `Cert_RNMC/` (o `_INHABILITADOS`) |
-| `automation_Contraloria.py` | Contraloría | Antecedentes fiscales | "NO SE ENCUENTRA REPORTADO COMO RESPONSABLE FISCAL" | `Cert_CONT/` (o `_INHABILITADOS`) |
-| `automation_Procuraduria.py` | Procuraduría | Antecedentes disciplinarios | "NO REGISTRA SANCIONES NI INHABILIDADES VIGENTES" | `Cert_PROC/` (o `_INHABILITADOS`) |
-| `automation_Judicial.py` | Policía Nacional | Antecedentes judiciales | "NO TIENE ASUNTOS PENDIENTES" | `Cert_JUD/` (o `_INHABILITADOS`) |
-| `automation_DelitosSexuales.py` | Policía Nacional | Inhabilidad por delitos sexuales | "NO REGISTRA INHABILIDAD" | `Cert_DSEX/` (o `_INHABILITADOS`) |
+| `automation_RNMC.py` | Registro Nacional de Medidas Correctivas  `Cert_RNMC/` (o `_INHABILITADOS`) |
+| `automation_Contraloria.py` | Antecedentes fiscales  | `Cert_CONT/` (o `_INHABILITADOS`) |
+| `automation_Procuraduria.py` | Antecedentes disciplinarios  | `Cert_PROC/` (o `_INHABILITADOS`) |
+| `automation_Judicial.py` | Antecedentes judiciales | `Cert_JUD/` (o `_INHABILITADOS`) |
+| `automation_DelitosSexuales.py` | Inhabilidad por Delitos Sexuales | `Cert_DSEX/` (o `_INHABILITADOS`) |
 
-Las carpetas de salida se crean junto al Excel que se use como fuente de datos, con nombres de archivo cortos (`{CODIGO}_{PrimerNombre}_{documento}.pdf`) para no exceder el límite de ruta de Windows (260 caracteres), algo que sí llegó a pasar con carpetas de postulante muy largas combinadas con nombres completos. Cuando el texto del resultado no contiene la frase de "resultado limpio" de esa entidad (por ejemplo, sí registra algún asunto pendiente), el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente, con un aviso sonoro, para que quede visible y se revise a mano.
+Las carpetas de salida se crean junto al Excel que se use como fuente de datos, con nombres de archivo cortos (`{CODIGO}_{PrimerNombre}_{documento}.pdf`) para no exceder el límite de ruta de Windows (260 caracteres).
 
-> Antes de este cambio, las carpetas se llamaban `Certificados_Contraloria`, `Certificados_RNMC`, `Certificados_Procuraduria`, `Certificados_Policia` y `Certificados_Delitos_Sexuales`, con archivos nombrados por el nombre completo de la persona. Esas carpetas no se renombran ni se tocan: los scripts las siguen revisando además de las nuevas, para no volver a descargar (y gastar créditos de 2Captcha) lo que ya estaba guardado ahí con el formato viejo.
+Cuando el texto del resultado no contiene la frase de "resultado limpio" de esa entidad , el PDF se guarda en la carpeta `_INHABILITADOS` correspondiente, con un aviso sonoro, para que quede visible y se revise a mano.
 
 ## Requisitos
 
 - Python 3.11+
 - Google Chrome instalado
-- Una cuenta de [2Captcha](https://2captcha.com/) con saldo (se usa para resolver los reCAPTCHA de Contraloría, Judicial y Delitos Sexuales)
-- `preparar_personas.py` usa [EasyOCR](https://github.com/JaidedAI/EasyOCR) para leer cédulas escaneadas; la primera vez que lo necesita descarga sus modelos (~100 MB). En este equipo se configuró para guardarlos en `D:\ModelosIA\EasyOCR` en vez de en `C:` (ver variable `EASYOCR_MODULE_PATH` más abajo), por el espacio limitado del disco del sistema.
+- Una cuenta de [2Captcha](https://2captcha.com/) con saldo.
+- `preparar_personas.py` usa [EasyOCR](https://github.com/JaidedAI/EasyOCR) para leer cédulas escaneadas; la primera vez que lo necesita descarga sus modelos (~100 MB).
 
 ## Instalación
 
@@ -39,14 +39,6 @@ Crea un archivo `.env` en esta carpeta (no se sube a git) con tu clave de 2Captc
 API_KEY_2CAPTCHA=tu_clave_aqui
 ```
 
-Si el disco `C:` tiene poco espacio, se puede redirigir dónde EasyOCR guarda sus modelos (y dónde pip guarda su caché de descargas) a otra unidad con más espacio, con variables de entorno de usuario persistentes (PowerShell, una sola vez):
-
-```powershell
-[System.Environment]::SetEnvironmentVariable("EASYOCR_MODULE_PATH", "D:\ModelosIA\EasyOCR", "User")
-[System.Environment]::SetEnvironmentVariable("PIP_CACHE_DIR", "D:\pip-cache", "User")
-```
-
-`preparar_personas.py` también configura esta variable automáticamente al arrancar si detecta que existe la unidad `D:` y la variable no está ya definida, así que este paso es opcional — solo hace falta si quieres fijarlo de forma permanente o usar otra ruta.
 
 ## El archivo de entrada
 
@@ -54,7 +46,7 @@ Los scripts aceptan tres formatos de origen, y detectan cuál es por la extensi�
 
 ### Excel (`.xlsx`)
 
-Leen **todas las hojas** del Excel de anexo técnico del postulante ("ANEXO TECNICO... INFORMACION ARTISTAS..."), no solo la primera — algunas plantillas separan a las personas en varias pestañas (por ejemplo `BAILARINES` / `MUSICOS`). En cada hoja, los encabezados de la tabla deben estar en la fila 29, con estas columnas:
+Leen **todas las hojas** del Excel de anexo técnico del postulante:
 
 - `# DOC. IDENTIDAD`
 - `TIPO DOCUMENTO \n(RC - TI - PP)`
@@ -67,7 +59,7 @@ Si una persona aparece más de una vez (por ejemplo, con varios roles en distint
 
 ### PDF de autorización (`.pdf`)
 
-Para convocatorias que ya no traen Excel (por ejemplo VENTANILLA ABIERTA), los scripts pueden leer directamente el PDF de "Autorización para consulta de antecedentes, registros e inhabilidades" — el mismo documento firmado por cada postulante, con una autorización por persona dentro del mismo archivo.
+Los scripts pueden leer directamente el PDF de "Autorización para consulta de antecedentes, registros e inhabilidades" — el mismo documento firmado por cada postulante, con una autorización por persona dentro del mismo archivo.
 
 Cada autorización trae, en la misma frase, todo lo necesario:
 
