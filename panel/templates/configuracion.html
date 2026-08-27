@@ -5,7 +5,7 @@
 {% block contenido %}
   <div class="h-full overflow-y-auto p-6 flex flex-col gap-5 max-w-2xl">
 
-    <div id="aviso-cuenta" class="hidden px-4 py-3 rounded-xl text-sm"></div>
+    <div id="aviso-cuenta" role="status" aria-live="polite" class="hidden px-4 py-3 rounded-xl text-sm"></div>
 
     <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4">
       <div>
@@ -14,24 +14,24 @@
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombres</label>
-          <input id="perfil-nombres" type="text" value="{{ mis_datos.nombres }}"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="perfil-nombres" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombres</label>
+          <input id="perfil-nombres" type="text" autocomplete="given-name" value="{{ mis_datos.nombres }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Apellidos</label>
-          <input id="perfil-apellidos" type="text" value="{{ mis_datos.apellidos }}"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="perfil-apellidos" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Apellidos</label>
+          <input id="perfil-apellidos" type="text" autocomplete="family-name" value="{{ mis_datos.apellidos }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Correo</label>
-          <input id="perfil-correo" type="email" value="{{ mis_datos.correo }}"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="perfil-correo" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Correo</label>
+          <input id="perfil-correo" type="email" autocomplete="email" spellcheck="false" value="{{ mis_datos.correo }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Celular</label>
-          <input id="perfil-celular" type="tel" value="{{ mis_datos.celular }}"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="perfil-celular" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Celular</label>
+          <input id="perfil-celular" type="tel" autocomplete="tel" value="{{ mis_datos.celular }}"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
       </div>
       <button id="btn-guardar-perfil" class="bg-[var(--accent)] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors self-start">
@@ -58,19 +58,19 @@
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña actual</label>
-          <input id="clave-actual" type="password"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="clave-actual" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña actual</label>
+          <input id="clave-actual" type="password" autocomplete="current-password"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña nueva</label>
-          <input id="clave-nueva" type="password" minlength="6"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="clave-nueva" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Contraseña nueva</label>
+          <input id="clave-nueva" type="password" autocomplete="new-password" minlength="6"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Repite la nueva</label>
-          <input id="clave-nueva-confirmacion" type="password" minlength="6"
-                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+          <label for="clave-nueva-confirmacion" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Repite la nueva</label>
+          <input id="clave-nueva-confirmacion" type="password" autocomplete="new-password" minlength="6"
+                 class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
         </div>
       </div>
       <button id="btn-cambiar-clave" class="bg-[var(--accent)] text-white rounded-lg py-2 px-5 text-sm font-medium hover:bg-[var(--accent-hover)] transition-colors self-start">
@@ -89,7 +89,7 @@
           <div class="text-sm font-medium">Clave de 2Captcha</div>
           <div class="text-xs text-[var(--text-muted)] mt-0.5">Usada por Contraloría, Procuraduría, Judicial y Delitos Sexuales para resolver el reCAPTCHA.</div>
         </div>
-        <span id="estado-captcha" class="insignia shrink-0">Cargando...</span>
+        <span id="estado-captcha" class="insignia shrink-0">Cargando…</span>
       </div>
       <div class="p-4 flex items-center justify-between gap-4">
         <div>

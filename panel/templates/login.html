@@ -25,17 +25,17 @@
     </div>
     <form method="post" action="/login" class="bg-white border border-[#E6E5E0] rounded-xl p-6 flex flex-col gap-4">
       {% if error %}
-      <div class="bg-[#FBE3E9] text-[#cf2d56] rounded-lg px-3 py-2 text-sm">{{ error }}</div>
+      <div role="alert" class="bg-[#FBE3E9] text-[#cf2d56] rounded-lg px-3 py-2 text-sm">{{ error }}</div>
       {% endif %}
       <div>
-        <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Usuario</label>
-        <input name="usuario" type="text" required autofocus
-               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+        <label for="usuario" class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Usuario</label>
+        <input id="usuario" name="usuario" type="text" autocomplete="username" spellcheck="false" required autofocus
+               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-[#F54E00]" />
       </div>
       <div>
-        <label class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Contraseña</label>
-        <input name="clave" type="password" required
-               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#F54E00]" />
+        <label for="clave" class="text-xs font-medium block mb-1 text-[#807D72] uppercase tracking-wide">Contraseña</label>
+        <input id="clave" name="clave" type="password" autocomplete="current-password" required
+               class="w-full border border-[#E6E5E0] rounded-lg px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-[#F54E00]" />
       </div>
       <button type="submit" class="bg-[#F54E00] text-white rounded-lg py-2 text-sm font-medium hover:bg-[#D04200] transition-colors">
         Ingresar

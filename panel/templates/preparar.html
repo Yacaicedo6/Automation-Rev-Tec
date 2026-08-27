@@ -8,7 +8,7 @@
     background: transparent; font-size: 13px; color: var(--text-main);
   }
   table input:hover, table select:hover { border-color: var(--border); }
-  table input:focus, table select:focus { outline: none; border-color: var(--accent); background: var(--bg-card); }
+  table input:focus-visible, table select:focus-visible { outline: none; border-color: var(--accent); background: var(--bg-card); }
 {% endblock %}
 
 {% block contenido %}
@@ -16,18 +16,18 @@
 
     <div class="bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-5 flex flex-col gap-4 max-w-3xl">
       <div>
-        <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombre de esta revisión</label>
-        <input id="nombre-revision" type="text" placeholder="Ej: Festival Mundial de Salsa"
-               class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+        <label for="nombre-revision" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">Nombre de esta revisión</label>
+        <input id="nombre-revision" type="text" placeholder="Ej: Festival Mundial de Salsa…"
+               class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de autorización</label>
+          <label for="archivo-autorizacion" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de autorización</label>
           <input id="archivo-autorizacion" type="file" accept="application/pdf"
                  class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
         </div>
         <div>
-          <label class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de copias de cédula (opcional)</label>
+          <label for="archivo-cedulas" class="text-xs font-medium block mb-1 text-[var(--text-muted)] uppercase tracking-wide">PDF de copias de cédula (opcional)</label>
           <input id="archivo-cedulas" type="file" accept="application/pdf"
                  class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
         </div>
@@ -37,7 +37,7 @@
       </button>
     </div>
 
-    <div id="aviso" class="hidden max-w-3xl px-4 py-3 rounded-xl text-sm"></div>
+    <div id="aviso" role="status" aria-live="polite" class="hidden max-w-3xl px-4 py-3 rounded-xl text-sm"></div>
 
     <div id="contenedor-tabla" class="hidden flex-1 min-h-0 flex flex-col gap-3">
       <div class="flex items-center justify-between">
@@ -102,11 +102,12 @@ function construirTabla(filas) {
   for (const fila of filas) {
     const tr = document.createElement('tr');
     tr.className = 'border-b border-[var(--border)] last:border-0';
-    for (const [clave] of COLUMNAS) {
+    for (const [clave, etiqueta] of COLUMNAS) {
       const td = document.createElement('td');
       const input = document.createElement('input');
       input.value = fila[clave] ?? '';
       input.dataset.campo = clave;
+      input.setAttribute('aria-label', etiqueta);
       td.appendChild(input);
       tr.appendChild(td);
     }
@@ -137,6 +138,7 @@ btnLeer.addEventListener('click', async () => {
   }
 
   btnLeer.disabled = true;
+  btnLeer.textContent = 'Leyendo…';
   aviso.classList.add('hidden');
   contenedorTabla.classList.add('hidden');
   linkDescargarCsv.classList.add('hidden');
@@ -152,6 +154,7 @@ btnLeer.addEventListener('click', async () => {
     const resp = await fetch('/api/preparar', { method: 'POST', body: formulario });
     const datos = await resp.json();
     btnLeer.disabled = false;
+    btnLeer.textContent = 'Leer y conciliar';
 
     if (datos.error) {
       mostrarAviso(datos.error, 'error');
@@ -168,6 +171,7 @@ btnLeer.addEventListener('click', async () => {
     }
   } catch (error) {
     btnLeer.disabled = false;
+    btnLeer.textContent = 'Leer y conciliar';
     mostrarAviso(`Error inesperado: ${error}`, 'error');
   }
 });

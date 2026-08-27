@@ -13,11 +13,12 @@
   </div>
 
   <!-- Modal: restablecer contraseña -->
-  <div id="modal-restablecer" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+  <div id="modal-restablecer" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50" style="overscroll-behavior: contain;">
     <div class="bg-[var(--bg-card)] rounded-xl w-full max-w-sm p-5 flex flex-col gap-3">
-      <div class="font-medium text-sm">Restablecer contraseña de <span id="usuario-restablecer"></span></div>
-      <input id="clave-nueva" type="password" placeholder="Contraseña nueva (mínimo 6 caracteres)"
-             class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
+      <div class="font-medium text-sm" id="titulo-restablecer">Restablecer contraseña de <span id="usuario-restablecer"></span></div>
+      <label for="clave-nueva" class="sr-only">Contraseña nueva</label>
+      <input id="clave-nueva" type="password" autocomplete="new-password" placeholder="Contraseña nueva (mínimo 6 caracteres)…"
+             class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
       <div class="flex gap-2 justify-end">
         <button id="btn-cancelar-restablecer" class="px-4 py-1.5 text-sm rounded-lg border border-[var(--border)] hover:bg-[var(--hover-bg)]">Cancelar</button>
         <button id="btn-confirmar-restablecer" class="px-4 py-1.5 text-sm rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]">Guardar</button>

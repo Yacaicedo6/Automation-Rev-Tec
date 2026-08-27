@@ -9,7 +9,7 @@
 
     <div id="tarjetas-stats" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3"></div>
 
-    <div id="mensaje" class="text-sm text-[var(--text-muted)]">Cargando...</div>
+    <div id="mensaje" role="status" aria-live="polite" class="text-sm text-[var(--text-muted)]">Cargando…</div>
 
     <div id="lista-grupos" class="flex flex-col gap-3 pb-6"></div>
 
@@ -47,7 +47,7 @@ function celdaEstado(infoEstado, permiteEliminar) {
   }
   const insigniaHtml = infoEstado.estado === 'alerta' ? insignia('Alerta', 'alerta') : insignia('OK', 'ok');
   const botonEliminar = permiteEliminar
-    ? `<button type="button" class="btn-eliminar-archivo text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)]" data-archivo="${infoEstado.archivo}" title="Borrar este certificado (queda pendiente para volver a consultarse)">✕</button>`
+    ? `<button type="button" class="btn-eliminar-archivo text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)]" data-archivo="${infoEstado.archivo}" title="Borrar este certificado (queda pendiente para volver a consultarse)" aria-label="Borrar este certificado (queda pendiente para volver a consultarse)"><span aria-hidden="true">✕</span></button>`
     : '';
   return `<span class="inline-flex items-center gap-1">${insigniaHtml}${botonEliminar}</span>`;
 }
@@ -83,7 +83,7 @@ function tarjetaStat(etiqueta, valor, color) {
 }
 
 async function cargarPanorama() {
-  mensaje.textContent = 'Cargando...';
+  mensaje.textContent = 'Cargando…';
   tarjetasStats.classList.add('hidden');
   listaGrupos.innerHTML = '';
 
@@ -133,7 +133,7 @@ async function cargarPanorama() {
           const etiqueta = (grupo.entidades && grupo.entidades[codigo]) ? grupo.entidades[codigo].etiqueta : codigo;
           return `<span class="inline-flex items-stretch rounded-lg border border-[var(--border)] overflow-hidden">
             <a href="/api/lote/${encodeURIComponent(grupo.nombre)}/descargar-carpeta?carpeta=Cert_${encodeURIComponent(codigo)}" class="text-xs py-1 px-2 hover:bg-[var(--hover-bg)] mono">${etiqueta}.zip</a>
-            <button type="button" class="btn-eliminar-carpeta text-xs px-1.5 border-l border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)] hover:bg-[var(--hover-bg)]" data-carpeta="Cert_${codigo}" data-etiqueta="${etiqueta}" title="Borrar los certificados de ${etiqueta} en esta revisión">✕</button>
+            <button type="button" class="btn-eliminar-carpeta text-xs px-1.5 border-l border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--badge-alerta-text)] hover:bg-[var(--hover-bg)]" data-carpeta="Cert_${codigo}" data-etiqueta="${etiqueta}" title="Borrar los certificados de ${etiqueta} en esta revisión" aria-label="Borrar los certificados de ${etiqueta} en esta revisión"><span aria-hidden="true">✕</span></button>
           </span>`;
         }).join('')}
       </div>`;

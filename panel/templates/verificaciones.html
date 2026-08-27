@@ -2,7 +2,7 @@
 {% block titulo %}Ejecutar verificaciones{% endblock %}
 {% block encabezado %}Ejecutar verificaciones{% endblock %}
 {% block encabezado_extra %}
-    <span id="estado-conexion" class="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[var(--border)] text-[var(--text-main)]">
+    <span id="estado-conexion" role="status" aria-live="polite" class="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-full bg-[var(--border)] text-[var(--text-main)]">
       <span class="w-1.5 h-1.5 rounded-full bg-[var(--text-muted)]"></span> Sin iniciar
     </span>
     <button id="btn-toggle-visor" type="button" class="text-xs px-3 py-1 rounded-full border border-[var(--border)] text-[var(--text-main)] hover:bg-[var(--hover-bg)] transition-colors">
@@ -33,9 +33,9 @@
           </div>
 
           <div id="bloque-fuente-revision" class="flex flex-col gap-2">
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión</label>
-            <select id="select-revision" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
-              <option value="">Cargando...</option>
+            <label for="select-revision" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión</label>
+            <select id="select-revision" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]">
+              <option value="">Cargando…</option>
             </select>
             <div id="bloque-reemplazar-excel" class="hidden flex flex-col gap-1.5 mt-0.5">
               <button type="button" id="btn-reemplazar-excel" class="self-start text-xs text-[var(--accent)] hover:underline">
@@ -46,33 +46,33 @@
           </div>
 
           <div id="bloque-fuente-subida" class="hidden flex-col gap-2">
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-            <input id="nombre-revision-subida" type="text" placeholder="Ej: Festival Mundial de Salsa"
-                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
+            <label for="nombre-revision-subida" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+            <input id="nombre-revision-subida" type="text" placeholder="Ej: Festival Mundial de Salsa…"
+                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
+            <label for="archivo-subida" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">PDF de autorización</label>
             <input id="archivo-subida" type="file" accept="application/pdf"
                    class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
           </div>
 
           <div id="bloque-fuente-excel" class="hidden flex-col gap-2">
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-            <input id="nombre-revision-excel" type="text" placeholder="Ej: Festival Mundial de Salsa"
-                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
+            <label for="nombre-revision-excel" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+            <input id="nombre-revision-excel" type="text" placeholder="Ej: Festival Mundial de Salsa…"
+                   class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
+            <label for="archivo-excel" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de postulantes</label>
             <input id="archivo-excel" type="file" accept=".xlsx,.xls"
                    class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
           </div>
 
           <div id="bloque-fuente-juridicas" class="hidden flex-col gap-2">
-            <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión de jurídicas existente (opcional)</label>
-            <select id="select-revision-juridicas" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]">
+            <label for="select-revision-juridicas" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Revisión de jurídicas existente (opcional)</label>
+            <select id="select-revision-juridicas" class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]">
               <option value="">-- Subir un Excel nuevo --</option>
             </select>
             <div id="bloque-juridicas-nueva" class="flex flex-col gap-2 mt-1">
-              <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
-              <input id="nombre-revision-juridicas" type="text" placeholder="Ej: Personas jurídicas Mundial de Salsa"
-                     class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]" />
-              <label class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de personas jurídicas (Código, Razón Social, Tipo de identificación, NIT)</label>
+              <label for="nombre-revision-juridicas" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide">Nombre para esta revisión nueva</label>
+              <input id="nombre-revision-juridicas" type="text" placeholder="Ej: Personas jurídicas Mundial de Salsa…"
+                     class="w-full border border-[var(--border)] rounded-lg px-3 py-2 text-sm bg-[var(--bg-card)] text-[var(--text-main)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent)]" />
+              <label for="archivo-juridicas" class="text-xs font-medium block text-[var(--text-muted)] uppercase tracking-wide mt-1">Excel de personas jurídicas (Código, Razón Social, Tipo de identificación, NIT)</label>
               <input id="archivo-juridicas" type="file" accept=".xlsx,.xls"
                      class="w-full text-xs border border-[var(--border)] rounded-lg px-3 py-2 text-[var(--text-main)] file:mr-3 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-[var(--hover-bg)] file:text-[var(--text-main)] file:text-xs file:cursor-pointer" />
             </div>
@@ -309,7 +309,7 @@ archivoReemplazarExcelInput.addEventListener('change', async () => {
   formulario.append('excel', archivo);
 
   btnReemplazarExcel.disabled = true;
-  btnReemplazarExcel.textContent = 'Subiendo...';
+  btnReemplazarExcel.textContent = 'Subiendo…';
   const resp = await fetch('/api/subir-excel-directo', { method: 'POST', body: formulario });
   const datos = await resp.json();
   btnReemplazarExcel.disabled = false;
@@ -361,7 +361,7 @@ async function cargarResultados(nombreRevision) {
     const fila = document.createElement('a');
     fila.href = `/api/lote/${encodeURIComponent(nombreRevision)}/descargar?archivo=${encodeURIComponent(archivo.ruta_relativa)}`;
     fila.className = 'flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-[var(--hover-bg)] mono';
-    fila.innerHTML = `<span class="truncate">${archivo.ruta_relativa}</span><span class="text-[var(--text-muted)] shrink-0 ml-2">${archivo.tamano_kb} KB</span>`;
+    fila.innerHTML = `<span class="truncate min-w-0">${archivo.ruta_relativa}</span><span class="text-[var(--text-muted)] shrink-0 ml-2">${archivo.tamano_kb} KB</span>`;
     listaResultados.appendChild(fila);
   }
   linkDescargarZip.href = `/api/lote/${encodeURIComponent(nombreRevision)}/descargar-zip`;
@@ -378,10 +378,10 @@ async function correrVerificacion(codigo, nombreRevision, archivo) {
     ws.onmessage = (evento) => {
       const mensaje = JSON.parse(evento.data);
       if (mensaje.tipo === 'espera') {
-        marcarEstado(`Esperando cupo (posición ${mensaje.posicion})...`, 'var(--badge-pendiente-text)');
-        ocultarVisor(`Esperando que se libere un cupo... (posición ${mensaje.posicion} en la fila)`);
+        marcarEstado(`Esperando cupo (posición ${mensaje.posicion})…`, 'var(--badge-pendiente-text)');
+        ocultarVisor(`Esperando que se libere un cupo… (posición ${mensaje.posicion} en la fila)`);
       } else if (mensaje.tipo === 'cupo') {
-        marcarEstado('Corriendo...', 'var(--accent)');
+        marcarEstado('Corriendo…', 'var(--accent)');
         mostrarVisor(mensaje.puerto_vnc);
       } else if (mensaje.tipo === 'log') {
         agregarLinea(mensaje.texto);
@@ -488,7 +488,7 @@ btnIniciar.addEventListener('click', async () => {
   btnIniciar.disabled = true;
   btnDetener.disabled = false;
   bloqueSeleccion.classList.add('hidden');
-  marcarEstado('Corriendo...', 'var(--accent)');
+  marcarEstado('Corriendo…', 'var(--accent)');
   logEntries.innerHTML = '';
   bloqueResultados.classList.add('hidden');
 
@@ -507,7 +507,7 @@ btnIniciar.addEventListener('click', async () => {
 
 btnDetener.addEventListener('click', async () => {
   cancelado = true;
-  agregarLinea('--- Deteniendo, por favor espera... ---');
+  agregarLinea('--- Deteniendo, por favor espera… ---');
   btnDetener.disabled = true;
   await fetch('/api/detener', { method: 'POST' });
 });
